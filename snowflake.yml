@@ -1,0 +1,23 @@
+definition_version: "2"
+
+entities:
+  snowdash:
+    type: snowflake-app
+    identifier:
+      name: SNOWDASH
+      database: '"USER$ROGERIO.SILVA@TRIGGO.AI"'
+      schema: PUBLIC
+    artifacts:
+      - src: ./*
+        dest: ./
+        ignore:
+          - node_modules
+          - .env*
+          - __pycache__
+          - "*.pyc"
+          - .next
+          - .git
+          - snowflake.log
+
+    query_warehouse: LAB_WH_XS
+    code_workspace: '"USER$ROGERIO.SILVA@TRIGGO.AI".PUBLIC.SNOWFLAKE_APPS'
