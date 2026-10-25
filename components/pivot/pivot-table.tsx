@@ -14,6 +14,8 @@ export type SortState =
 const RENDER_STEP = 1000
 
 interface Props {
+  /** "r, g, b" of the sheet theme. */
+  heatColor?: string
   grid: PivotGrid
   spec: PivotSpec
   fields: Map<string, Field>
@@ -50,7 +52,7 @@ export function sortedKeys(grid: PivotGrid, sort: SortState): { rowKeys: Key[]; 
   return { rowKeys, colKeys }
 }
 
-export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props) {
+export function PivotTable({ grid, spec, fields, heatmap, heatColor = "41, 181, 232", sort, onSort }: Props) {
   const [renderCount, setRenderCount] = useState(RENDER_STEP)
   const nr = spec.rows.length
   const nc = spec.columns.length
@@ -84,7 +86,7 @@ export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props)
     const n = Number(v)
     if (!Number.isFinite(n) || max <= min) return undefined
     const t = (n - min) / (max - min)
-    return { backgroundColor: `rgba(41, 181, 232, ${0.08 + t * 0.55})` }
+    return { backgroundColor: `rgba(${heatColor}, ${0.08 + t * 0.55})` }
   }
 
   const valueLabels = spec.values.map((v) => valueLabel(v, fields.get(v.fieldId)))

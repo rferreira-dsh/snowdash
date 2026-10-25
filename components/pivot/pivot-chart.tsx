@@ -29,6 +29,7 @@ const MAX_CATEGORIES = 300
 const MAX_SERIES = 30
 
 interface Props {
+  palette?: string[]
   grid: PivotGrid
   spec: PivotSpec
   fields: Map<string, Field>
@@ -36,7 +37,7 @@ interface Props {
   sort: SortState
 }
 
-export function PivotChart({ grid, spec, fields, kind, sort }: Props) {
+export function PivotChart({ grid, spec, fields, kind, sort, palette = PALETTE }: Props) {
   const { data, series, clipped } = useMemo(() => {
     const { rowKeys, colKeys } = sortedKeys(grid, sort)
     const vLabels = spec.values.map((v) => valueLabel(v, fields.get(v.fieldId)))
@@ -95,7 +96,7 @@ export function PivotChart({ grid, spec, fields, kind, sort }: Props) {
       {series.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
     </>
   )
-  const color = (i: number) => PALETTE[i % PALETTE.length]
+  const color = (i: number) => palette[i % palette.length]
 
   return (
     <div className="flex h-full flex-col p-3">

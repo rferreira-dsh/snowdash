@@ -51,6 +51,7 @@ import { PivotTable, pivotMatrix, dimHeader, type SortState } from "./pivot-tabl
 import { PivotChart, type ChartKind } from "./pivot-chart"
 import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
 import { CalcEditor } from "./calc-editor"
+import { theme as getTheme, themeForIndex } from "./themes"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
 import type { DragPayload, ShelfId } from "./dnd"
 
@@ -78,6 +79,8 @@ export interface SheetState {
   view: "table" | "chart"
   chartKind: ChartKind
   heatmap: boolean
+  /** Color theme id (tab accent, chart palette, heatmap). */
+  theme?: string
 }
 
 export interface BookMeta {
@@ -97,7 +100,7 @@ const uid = () =>
       })
 
 function newSheet(n: number, spec?: PivotSpec): SheetState {
-  return { id: uid(), name: t("sheet.name", { n }), spec: spec ?? EMPTY_SPEC, view: "table", chartKind: "bar", heatmap: false }
+  return { id: uid(), name: t("sheet.name", { n }), spec: spec ?? EMPTY_SPEC, view: "table", chartKind: "bar", heatmap: false, theme: themeForIndex(n) }
 }
 
 /** What counts as "the content" of a SnowBook, for unsaved-changes detection. */
@@ -194,6 +197,7 @@ export function Workbench() {
   const active = sheets.find((s) => s.id === activeId) ?? sheets[0]
   const spec = active.spec
   const { view, chartKind, heatmap } = active
+  const sheetTheme = getTheme(active.theme)
   const patchActive = useCallback(
     (fn: (s: SheetState) => SheetState) => setSheets((ss) => ss.map((s) => (s.id === activeId ? fn(s) : s))),
     [activeId],
@@ -923,9 +927,9 @@ export function Workbench() {
               )}
             </div>
           ) : view === "table" ? (
-            <PivotTable key={result.dataUpdatedAt} grid={grid} spec={result.data!.spec} fields={fieldMap} heatmap={heatmap} sort={sort} onSort={setSort} />
+            <PivotTable key={result.dataUpdatedAt} grid={grid} spec={result.data!.spec} fields={fieldMap} heatmap={heatmap} heatColor={sheetTheme.heat} sort={sort} onSort={setSort} />
           ) : (
-            <PivotChart grid={grid} spec={result.data!.spec} fields={fieldMap} kind={chartKind} sort={sort} />
+            <PivotChart grid={grid} spec={result.data!.spec} fields={fieldMap} kind={chartKind} sort={sort} palette={sheetTheme.palette} />
           )}
           {grid && result.isFetching && (
             <div className="absolute right-3 top-3 flex items-center gap-2 rounded-md border border-border bg-popover px-2 py-1 text-xs shadow">
@@ -942,6 +946,7 @@ export function Workbench() {
           onRename={renameSheet}
           onDuplicate={duplicateSheet}
           onDelete={deleteSheet}
+          onTheme={(id, th) => setSheets((ss) => ss.map((s) => (s.id === id ? { ...s, theme: th } : s)))}
         />
 
         {/* Status bar */}

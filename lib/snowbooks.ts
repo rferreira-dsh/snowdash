@@ -18,6 +18,7 @@ export interface Sheet {
   view?: "table" | "chart"
   chartKind?: string
   heatmap?: boolean
+  theme?: string
 }
 
 export interface SnowBook {
@@ -100,6 +101,7 @@ function parseSheets(input: unknown): Sheet[] {
       view: s.view === "chart" ? "chart" : "table",
       chartKind: typeof s.chartKind === "string" ? s.chartKind.slice(0, 20) : "bar",
       heatmap: Boolean(s.heatmap),
+      ...(typeof s.theme === "string" && /^[a-z]{1,20}$/.test(s.theme) ? { theme: s.theme } : {}),
     }
   })
 }
