@@ -1,0 +1,24 @@
+definition_version: "2"
+
+entities:
+  snowdash:
+    type: snowflake-app
+    identifier:
+      name: SNOWDASH
+      # Where the app service is created — change to your database/schema.
+      database: MY_DATABASE
+      schema: SNOWDASH_APP
+    artifacts:
+      - src: ./*
+        dest: ./
+        ignore:
+          - node_modules
+          - .env*
+          - __pycache__
+          - "*.pyc"
+          - .next
+          - .git
+          - snowflake.log
+
+    query_warehouse: MY_WAREHOUSE
+    code_workspace: MY_DATABASE.SNOWDASH_APP.SNOWFLAKE_APPS
