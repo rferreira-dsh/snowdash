@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import type { Field, PivotSpec } from "@/lib/pivot/types"
 import { cellKey, compareKeys, compareValues, keyStr, type Key, type PivotGrid } from "@/lib/pivot/transform"
-import { fieldLabel, formatMember, formatNumber, grainLabel, valueLabel } from "./labels"
+import { fieldLabel, formatMember, formatValue, grainLabel, valueLabel } from "./labels"
 import { currentLocale, t } from "@/lib/i18n/client"
 
 export type SortState =
@@ -88,6 +88,7 @@ export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props)
   }
 
   const valueLabels = spec.values.map((v) => valueLabel(v, fields.get(v.fieldId)))
+  const fmt = (v: unknown, i: number) => formatValue(v, fields.get(spec.values[i]?.fieldId))
   const leafCols = nc > 0 ? colKeys : [[] as Key]
   const headerRows = nc + (nv > 0 ? 1 : 0) || 1
   const rowHeaderCols = Math.max(nr, 1)
@@ -212,14 +213,14 @@ export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props)
                   if (nv === 0) return null
                   return spec.values.map((_, vi) => (
                     <td key={`${keyStr(ck)}|${vi}`} className={td} style={heat(vals?.[vi], vi)}>
-                      {formatNumber(vals?.[vi])}
+                      {fmt(vals?.[vi], vi)}
                     </td>
                   ))
                 })}
                 {showRowTotals &&
                   spec.values.map((_, vi) => (
                     <td key={`tot|${vi}`} className={`${td} bg-muted/50 font-semibold`}>
-                      {formatNumber(grid.rowTotals.get(keyStr(rk))?.[vi])}
+                      {fmt(grid.rowTotals.get(keyStr(rk))?.[vi], vi)}
                     </td>
                   ))}
               </tr>
@@ -237,7 +238,7 @@ export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props)
                   const vals = nc > 0 ? grid.colTotals.get(keyStr(ck)) : grid.grand
                   return (
                     <td key={`${keyStr(ck)}|${vi}`} className={`${td} border-t-2 bg-muted font-semibold`}>
-                      {formatNumber(vals?.[vi])}
+                      {fmt(vals?.[vi], vi)}
                     </td>
                   )
                 }),
@@ -245,7 +246,7 @@ export function PivotTable({ grid, spec, fields, heatmap, sort, onSort }: Props)
               {showRowTotals &&
                 spec.values.map((_, vi) => (
                   <td key={`g|${vi}`} className={`${td} border-t-2 bg-muted font-bold`}>
-                    {formatNumber(grid.grand?.[vi])}
+                    {fmt(grid.grand?.[vi], vi)}
                   </td>
                 ))}
             </tr>

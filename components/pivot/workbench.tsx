@@ -23,7 +23,10 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
+  CALC_PREFIX,
   COUNT_ROWS_ID,
+  MAX_CALCS,
+  type CalcMetric,
   DEFAULT_LIMIT,
   GRAINS,
   MAX_MODEL_TABLES,
@@ -46,7 +49,8 @@ import { Shelf, MenuItem, MenuLabel, type PillItem } from "./shelf"
 import { FilterEditor, describeFilter } from "./filter-editor"
 import { PivotTable, pivotMatrix, dimHeader, type SortState } from "./pivot-table"
 import { PivotChart, type ChartKind } from "./pivot-chart"
-import { aggLabel, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
+import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
+import { CalcEditor } from "./calc-editor"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
 import type { DragPayload, ShelfId } from "./dnd"
 
@@ -123,7 +127,7 @@ function fieldsKey(s: Source | null) {
 
 /** Prefix plain-table field ids with the model alias when a table becomes a model. */
 function prefixSpec(spec: PivotSpec, alias: string): PivotSpec {
-  const p = (id: string) => (id === COUNT_ROWS_ID ? id : `${alias}.${id}`)
+  const p = (id: string) => (id === COUNT_ROWS_ID || id.startsWith(CALC_PREFIX) ? id : `${alias}.${id}`)
   return {
     ...spec,
     rows: spec.rows.map((d) => ({ ...d, fieldId: p(d.fieldId) })),
@@ -153,13 +157,14 @@ async function runPivot(source: Source, spec: PivotSpec): Promise<RunResult> {
 }
 
 function defaultAgg(f: Field, isSV: boolean): Agg {
+  if (f.calc) return "CALC"
   if (f.id === COUNT_ROWS_ID) return "COUNT"
   if (isSV) return "METRIC"
   return f.family === "number" && f.role === "measure" ? "SUM" : "COUNT_DISTINCT"
 }
 
 function aggsFor(f: Field): Agg[] {
-  if (f.id === COUNT_ROWS_ID) return []
+  if (f.id === COUNT_ROWS_ID || f.calc) return []
   return f.family === "number" ? TABLE_AGGS : TABLE_AGGS.filter((a) => a !== "SUM" && a !== "AVG")
 }
 
@@ -256,11 +261,13 @@ export function Workbench() {
     staleTime: 300_000,
   })
   const isSV = source?.kind === "SEMANTIC_VIEW"
+  const calcFields = useMemo(() => (source?.calcs ?? []).map(calcField), [source?.calcs])
   const fieldMap = useMemo(() => {
     const m = new Map<string, Field>((fieldsQ.data ?? []).map((f) => [f.id, f]))
     m.set(COUNT_ROWS_ID, COUNT_ROWS_FIELD)
+    calcFields.forEach((f) => m.set(f.id, f))
     return m
-  }, [fieldsQ.data])
+  }, [fieldsQ.data, calcFields])
 
   // Drop shelf items whose fields no longer exist (e.g. a table removed from the model) — in every sheet.
   useEffect(() => {
@@ -379,15 +386,33 @@ export function Workbench() {
           : t("n.noKey", { name: o.name }),
       )
       setShowModel(true)
-      setSource(modelSource(next))
+      setSource({ ...modelSource(next), calcs: source.calcs })
     } catch (e) {
       setNotice(e instanceof Error ? e.message : t("n.addFailed"))
     } finally {
       setAdding(false)
     }
   }
-  const changeModel = (m: DataModel) => setSource(modelSource(m))
-  const removeFromModel = (alias: string) => source?.model && setSource(modelSource(removeTable(source.model, alias)))
+  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs })
+  const removeFromModel = (alias: string) =>
+    source?.model && setSource({ ...modelSource(removeTable(source.model, alias)), calcs: source.calcs })
+
+  // ---- calculated metrics (live on the source, so they are saved with the SnowBook) ----
+  const [calcEdit, setCalcEdit] = useState<CalcMetric | "new" | null>(null)
+  const saveCalc = (c: CalcMetric) => {
+    setSource((s) => {
+      if (!s) return s
+      const list = s.calcs ?? []
+      if (list.length >= MAX_CALCS && !list.some((x) => x.id === c.id)) return s
+      const calcs = list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c]
+      return { ...s, calcs }
+    })
+    setCalcEdit(null)
+  }
+  const deleteCalc = (id: string) => {
+    setSource((s) => (s ? { ...s, calcs: (s.calcs ?? []).filter((x) => x.id !== id) } : s))
+    setCalcEdit(null)
+  }
 
   // ---- SnowBooks -------------------------------------------------------------
   const qc = useQueryClient()
@@ -540,10 +565,10 @@ export function Workbench() {
   // ---- shelf editing ---------------------------------------------------------
   const validateTarget = useCallback(
     (f: Field, shelf: ShelfId): string | null => {
-      const isMeasureOnly = f.role === "metric" || f.id === COUNT_ROWS_ID
+      const isMeasureOnly = f.role === "metric" || f.id === COUNT_ROWS_ID || !!f.calc
       if ((shelf === "rows" || shelf === "columns") && isMeasureOnly) return t("n.onlyValues", { name: fieldLabel(f, f.id) })
       if (shelf === "filters" && isMeasureOnly) return t("n.notFilter", { name: fieldLabel(f, f.id) })
-      if (shelf === "values" && isSV && f.role !== "metric") return t("n.svValues")
+      if (shelf === "values" && isSV && f.role !== "metric" && !f.calc) return t("n.svValues")
       return null
     },
     [isSV],
@@ -732,7 +757,21 @@ export function Workbench() {
         fieldsError={fieldsQ.error ? fieldsQ.error.message : null}
         onQuickAdd={quickAdd}
         onAddToModel={addToModel}
+        calcFields={calcFields}
+        onNewCalc={() => setCalcEdit("new")}
+        onEditCalc={(f) => f.calc && setCalcEdit(f.calc)}
       />
+      {calcEdit && source && (
+        <CalcEditor
+          source={source}
+          fields={fieldsQ.data ?? []}
+          initial={calcEdit === "new" ? null : calcEdit}
+          takenNames={(source.calcs ?? []).filter((c) => calcEdit === "new" || c.id !== calcEdit.id).map((c) => c.name)}
+          onSave={saveCalc}
+          onDelete={calcEdit === "new" ? undefined : () => deleteCalc(calcEdit.id)}
+          onClose={() => setCalcEdit(null)}
+        />
+      )}
 
       <main className="flex min-w-0 flex-1 flex-col">
         <BookBar

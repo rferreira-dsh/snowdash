@@ -95,7 +95,8 @@ describe("semantic view queries", () => {
       }),
     )
     expect(q.sql).toContain(`DIMENSIONS "T"."CANAL" AS "r0"`)
-    expect(q.sql).toContain(`METRICS "T"."TOTAL" AS "v0"`)
+    expect(q.sql).toContain(`METRICS "T"."TOTAL" AS "m0"`)
+    expect(q.sql).toContain(`"m0" AS "v0"`)
     expect(q.sql).toContain("UNION ALL")
     expect(q.binds).toEqual(["SP", "SP"]) // filter repeated in each grouping set
   })
@@ -175,5 +176,31 @@ describe("data models", () => {
       { database: "D", schema: "S", name: "C", alias: "C", join: { toAlias: "B", type: "LEFT" as const, pairs: [] } },
     ] }
     expect(removeTable(m, "B").tables.map((t) => t.alias)).toEqual(["A"])
+  })
+})
+
+describe("calculated metrics in pivot SQL", () => {
+  it("tables: renders the formula inside GROUPING SETS", () => {
+    const src: Source = { ...table, calcs: [{ id: "tk", name: "Ticket", formula: "SUM([VALOR]) / COUNT_ROWS()", format: "number", decimals: 2 }] }
+    const q = buildPivotQuery(src, tFields, spec({ rows: [{ fieldId: "UF" }], values: [{ fieldId: "calc:tk", agg: "CALC" }], totals: true }))
+    expect(q.sql).toContain(`(SUM("VALOR") / NULLIF(COUNT(*), 0)) AS "v0"`)
+    expect(q.sql).toContain("GROUPING SETS")
+  })
+
+  it("semantic views: requests referenced metrics once and computes outside", () => {
+    const svFields2: Field[] = [...svFields, { id: "T.QTD", name: "QTD", entity: "T", role: "metric", dataType: "NUMBER", family: "number" }]
+    const src: Source = { ...sv, calcs: [{ id: "r", name: "Razao", formula: "[TOTAL] / [QTD]", format: "percent", decimals: 1 }] }
+    const q = buildPivotQuery(src, svFields2, spec({
+      rows: [{ fieldId: "T.CANAL" }],
+      values: [{ fieldId: "T.TOTAL", agg: "METRIC" }, { fieldId: "calc:r", agg: "CALC" }],
+      totals: true,
+    }))
+    expect(q.sql).toContain(`METRICS "T"."TOTAL" AS "m0", "T"."QTD" AS "m1"`)
+    expect(q.sql).toContain(`"m0" AS "v0"`)
+    expect(q.sql).toContain(`("m0" / NULLIF("m1", 0)) AS "v1"`)
+  })
+
+  it("rejects unknown calc ids", () => {
+    expect(() => buildPivotQuery(table, tFields, spec({ values: [{ fieldId: "calc:nope", agg: "CALC" }] }))).toThrow(PivotError)
   })
 })

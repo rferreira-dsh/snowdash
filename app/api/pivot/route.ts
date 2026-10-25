@@ -3,7 +3,7 @@
  *   POST /api/pivot  { source, spec }  →  PivotResponse
  */
 
-import { querySnowflakeLongRunning } from "@/lib/snowflake"
+import { userQueryLongRunning } from "@/lib/pivot/caller"
 import { getCachedFields } from "@/lib/pivot/cache"
 import { parseSource } from "@/lib/pivot/catalog"
 import { buildPivotQuery } from "@/lib/pivot/sql"
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     sql = built.sql
 
     const t0 = Date.now()
-    const raw = await querySnowflakeLongRunning(built.sql, { binds: built.binds, maxWaitMs: 5 * 60 * 1000 })
+    const raw = await userQueryLongRunning(built.sql, built.binds, { maxWaitMs: 5 * 60 * 1000 })
     const elapsedMs = Date.now() - t0
 
     const truncated = raw.length > built.limit

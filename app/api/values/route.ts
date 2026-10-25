@@ -3,7 +3,7 @@
  *   POST /api/values  { source, fieldId, search? }  →  { values: unknown[] }
  */
 
-import { querySnowflake } from "@/lib/snowflake"
+import { userQuery } from "@/lib/pivot/caller"
 import { getCachedFields } from "@/lib/pivot/cache"
 import { parseSource } from "@/lib/pivot/catalog"
 import { buildValuesQuery, PivotError } from "@/lib/pivot/sql"
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (!field) throw new PivotError("e.unknownField", { id: String(body.fieldId) })
     const search = typeof body.search === "string" && body.search.trim() ? body.search.trim().slice(0, 200) : undefined
     const { sql, binds } = buildValuesQuery(source, field, search)
-    const rows = await querySnowflake(sql, { binds })
+    const rows = await userQuery(sql, binds)
     const values = rows.map((r) => (r.v instanceof Date ? r.v.toISOString() : r.v))
     return Response.json({ values })
   } catch (e) {

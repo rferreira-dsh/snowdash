@@ -10,10 +10,12 @@
  */
 
 import {
+  CALC_PREFIX,
   COUNT_ROWS_ID,
   GRAINS,
   MAX_LIMIT,
   TABLE_AGGS,
+  type CalcMetric,
   type DimRef,
   type Field,
   type FilterRef,
@@ -21,10 +23,19 @@ import {
   type Source,
 } from "./types"
 import { AppError } from "../i18n/messages"
+import { formulaFields, parseFormula, renderMetricsFormula, renderTableFormula } from "./formula"
 
 export type Bind = string | number
 
 export class PivotError extends AppError {}
+
+/** Calculated metric for a `calc:<id>` field id (must be defined on the source). */
+function findCalc(src: Source, fieldId: string): CalcMetric {
+  const id = fieldId.slice(CALC_PREFIX.length)
+  const c = src.calcs?.find((x) => x.id === id)
+  if (!c) throw new PivotError("e.calcUnknown", { id })
+  return c
+}
 
 export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`
@@ -196,8 +207,11 @@ function tableDimExpr(f: Field, ref: DimRef): string {
   return c
 }
 
-function tableAggExpr(map: Map<string, Field>, fieldId: string, agg: string): string {
+function tableAggExpr(src: Source, fields: Field[], map: Map<string, Field>, fieldId: string, agg: string): string {
   if (fieldId === COUNT_ROWS_ID) return "COUNT(*)"
+  if (fieldId.startsWith(CALC_PREFIX)) {
+    return renderTableFormula(parseFormula(findCalc(src, fieldId).formula), fields, colRef)
+  }
   const f = lookup(map, fieldId)
   if (!TABLE_AGGS.includes(agg as never)) throw new PivotError("e.badAgg", { agg: String(agg) })
   if ((agg === "SUM" || agg === "AVG") && f.family !== "number") {
@@ -214,7 +228,7 @@ export function buildTableQuery(src: Source, fields: Field[], spec: PivotSpec) {
 
   const rowExprs = spec.rows.map((d) => tableDimExpr(lookup(map, d.fieldId), d))
   const colExprs = spec.columns.map((d) => tableDimExpr(lookup(map, d.fieldId), d))
-  const valExprs = spec.values.map((v) => tableAggExpr(map, v.fieldId, v.agg))
+  const valExprs = spec.values.map((v) => tableAggExpr(src, fields, map, v.fieldId, v.agg))
 
   const select: string[] = [
     ...rowExprs.map((e, i) => `${e} AS "r${i}"`),
@@ -279,10 +293,27 @@ export function buildSemanticQuery(src: Source, fields: Field[], spec: PivotSpec
   }
   const rowF = spec.rows.map(dimField)
   const colF = spec.columns.map(dimField)
-  const valF = spec.values.map((v) => {
+
+  // Every metric the query needs (direct values + those referenced by calculated metrics)
+  // is requested once from SEMANTIC_VIEW as "m<k>"; values are then projected as "v<i>".
+  const metricAlias = new Map<string, string>()
+  const metricF: Field[] = []
+  const need = (f: Field) => {
+    if (!metricAlias.has(f.id)) {
+      metricAlias.set(f.id, `"m${metricF.length}"`)
+      metricF.push(f)
+    }
+    return metricAlias.get(f.id)!
+  }
+  const valExprs = spec.values.map((v) => {
+    if (v.fieldId.startsWith(CALC_PREFIX)) {
+      const ast = parseFormula(findCalc(src, v.fieldId).formula)
+      formulaFields(ast, fields).forEach((f) => f.role === "metric" && need(f))
+      return renderMetricsFormula(ast, fields, (f) => need(f))
+    }
     const f = lookup(map, v.fieldId)
     if (f.role !== "metric") throw new PivotError("e.notMetric", { name: f.name })
-    return f
+    return need(f)
   })
 
   const binds: Bind[] = []
@@ -293,7 +324,7 @@ export function buildSemanticQuery(src: Source, fields: Field[], spec: PivotSpec
       ...(hasR ? rowF.map((f, i) => `${svRef(f)} AS "r${i}"`) : []),
       ...(hasC ? colF.map((f, i) => `${svRef(f)} AS "c${i}"`) : []),
     ]
-    const metricsClause = valF.map((f, i) => `${svRef(f)} AS "v${i}"`)
+    const metricsClause = metricF.map((f) => `${svRef(f)} AS ${metricAlias.get(f.id)}`)
     const where = buildFilters(spec.filters, map, svRef, binds, false)
 
     const inner = [
@@ -309,7 +340,7 @@ export function buildSemanticQuery(src: Source, fields: Field[], spec: PivotSpec
     const cols = [
       ...rowF.map((_, i) => (hasR ? `"r${i}"` : `NULL AS "r${i}"`)),
       ...colF.map((_, i) => (hasC ? `"c${i}"` : `NULL AS "c${i}"`)),
-      ...valF.map((_, i) => `"v${i}"`),
+      ...valExprs.map((e, i) => `${e} AS "v${i}"`),
       `${hasR || rowF.length === 0 ? 0 : 1} AS "__gr"`,
       `${hasC || colF.length === 0 ? 0 : 1} AS "__gc"`,
     ]
@@ -360,4 +391,11 @@ export function buildValuesQuery(src: Source, field: Field, search: string | und
     binds.push(`%${search}%`)
   }
   return { sql: `${sql} ORDER BY 1 LIMIT ${limit}`, binds }
+}
+
+/** SQL fragment for a calculated metric (validation + preview in the editor). */
+export function previewCalcSql(src: Source, fields: Field[], formula: string): string {
+  const ast = parseFormula(formula)
+  if (src.kind === "SEMANTIC_VIEW") return renderMetricsFormula(ast, fields, svRef)
+  return renderTableFormula(ast, fields, colRef)
 }

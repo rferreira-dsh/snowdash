@@ -1,9 +1,15 @@
 /** Server-side catalog discovery (owner's rights). */
 
-import { querySnowflake } from "@/lib/snowflake"
+import { userQuery } from "./caller"
 import { quoteIdent } from "./sql"
 import { AppError } from "../i18n/messages"
-import { MAX_MODEL_TABLES, type DataModel, type Field, type FieldFamily, type ModelTable, type Source, type SourceKind } from "./types"
+import {
+  CURRENCIES,
+  MAX_CALCS,
+  MAX_MODEL_TABLES,
+  type CalcFormat,
+  type CalcMetric,
+  type DataModel, type Field, type FieldFamily, type ModelTable, type Source, type SourceKind } from "./types"
 
 function str(v: unknown): string {
   return v === null || v === undefined ? "" : String(v)
@@ -24,14 +30,14 @@ export function familyOf(dataType: string): FieldFamily {
 }
 
 export async function listDatabases(): Promise<{ name: string; kind: string }[]> {
-  const rows = await querySnowflake("SHOW TERSE DATABASES")
+  const rows = await userQuery("SHOW TERSE DATABASES")
   return rows
     .map((r) => ({ name: col(r, "name"), kind: col(r, "kind") }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function listSchemas(database: string): Promise<string[]> {
-  const rows = await querySnowflake(`SHOW TERSE SCHEMAS IN DATABASE ${quoteIdent(database)}`)
+  const rows = await userQuery(`SHOW TERSE SCHEMAS IN DATABASE ${quoteIdent(database)}`)
   return rows
     .map((r) => col(r, "name"))
     .filter((n) => n !== "INFORMATION_SCHEMA")
@@ -48,14 +54,14 @@ export interface CatalogObject {
 export async function listObjects(database: string, schema: string): Promise<CatalogObject[]> {
   const db = quoteIdent(database)
   const [tables, semantic] = await Promise.all([
-    querySnowflake(
+    userQuery(
       `SELECT TABLE_NAME, TABLE_TYPE, ROW_COUNT, COMMENT
          FROM ${db}.INFORMATION_SCHEMA.TABLES
         WHERE TABLE_SCHEMA = ?
         ORDER BY TABLE_NAME`,
-      { binds: [schema] },
+      [schema],
     ),
-    querySnowflake(`SHOW SEMANTIC VIEWS IN SCHEMA ${db}.${quoteIdent(schema)}`).catch(() => []),
+    userQuery(`SHOW SEMANTIC VIEWS IN SCHEMA ${db}.${quoteIdent(schema)}`).catch(() => []),
   ])
 
   const objs: CatalogObject[] = semantic.map((r) => ({
@@ -76,12 +82,12 @@ export async function listObjects(database: string, schema: string): Promise<Cat
 }
 
 async function tableFields(src: { database: string; schema: string; name: string }): Promise<Field[]> {
-  const rows = await querySnowflake(
+  const rows = await userQuery(
     `SELECT COLUMN_NAME, DATA_TYPE, NUMERIC_SCALE, COMMENT
        FROM ${quoteIdent(src.database)}.INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
       ORDER BY ORDINAL_POSITION`,
-    { binds: [src.schema, src.name] },
+    [src.schema, src.name],
   )
   return rows.map((r) => {
     const dataType = str(r.DATA_TYPE)
@@ -101,7 +107,7 @@ async function tableFields(src: { database: string; schema: string; name: string
 }
 
 async function semanticFields(src: Source): Promise<Field[]> {
-  const rows = await querySnowflake(
+  const rows = await userQuery(
     `DESCRIBE SEMANTIC VIEW ${[src.database, src.schema, src.name].map(quoteIdent).join(".")}`,
   )
   const byKey = new Map<string, Field>()
@@ -205,5 +211,25 @@ export function parseSource(input: unknown): Source {
   }
   const src: Source = { database: s.database as string, schema: s.schema as string, name: s.name as string, kind }
   if (kind === "MODEL") src.model = parseModel(s.model)
+  if (s.calcs !== undefined) src.calcs = parseCalcs(s.calcs)
   return src
+}
+
+const CALC_ID_RE = /^[A-Za-z0-9_-]{1,40}$/
+
+function parseCalcs(input: unknown): CalcMetric[] {
+  if (!Array.isArray(input) || input.length > MAX_CALCS) throw new AppError("e.badCalc")
+  const ids = new Set<string>()
+  return input.map((raw) => {
+    const c = (raw ?? {}) as Record<string, unknown>
+    const id = String(c.id ?? "")
+    const name = typeof c.name === "string" ? c.name.trim().slice(0, 100) : ""
+    const formula = typeof c.formula === "string" ? c.formula.slice(0, 2000) : ""
+    if (!CALC_ID_RE.test(id) || ids.has(id) || !name || !formula.trim()) throw new AppError("e.badCalc")
+    ids.add(id)
+    const format: CalcFormat = c.format === "percent" || c.format === "currency" ? c.format : "number"
+    const decimals = Math.min(Math.max(Math.trunc(Number(c.decimals ?? 2)) || 0, 0), 6)
+    const currency = (CURRENCIES as readonly string[]).includes(String(c.currency)) ? String(c.currency) : "BRL"
+    return { id, name, formula, format, decimals, ...(format === "currency" ? { currency } : {}) }
+  })
 }

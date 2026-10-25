@@ -30,7 +30,26 @@ export interface Source {
   kind: SourceKind
   /** Only for kind = MODEL (database/schema/name mirror the base table). */
   model?: DataModel
+  /** User-defined calculated metrics (saved with the SnowBook). */
+  calcs?: CalcMetric[]
 }
+
+export type CalcFormat = "number" | "percent" | "currency"
+
+export interface CalcMetric {
+  /** Stable id; the pivot field id is `calc:<id>`. */
+  id: string
+  name: string
+  formula: string
+  format: CalcFormat
+  decimals: number
+  /** ISO currency code when format = currency. */
+  currency?: string
+}
+
+export const CALC_PREFIX = "calc:"
+export const MAX_CALCS = 50
+export const CURRENCIES = ["BRL", "USD", "EUR"] as const
 
 export const MAX_MODEL_TABLES = 8
 
@@ -47,6 +66,8 @@ export interface Field {
   dataType: string
   family: FieldFamily
   description?: string
+  /** Client-only: set on calculated-metric pseudo-fields. */
+  calc?: CalcMetric
 }
 
 export const COUNT_ROWS_ID = "__COUNT_ROWS__"
@@ -54,7 +75,7 @@ export const COUNT_ROWS_ID = "__COUNT_ROWS__"
 export type Grain = "day" | "week" | "month" | "quarter" | "year"
 export const GRAINS: Grain[] = ["day", "week", "month", "quarter", "year"]
 
-export type Agg = "SUM" | "AVG" | "MIN" | "MAX" | "COUNT" | "COUNT_DISTINCT" | "METRIC"
+export type Agg = "SUM" | "AVG" | "MIN" | "MAX" | "COUNT" | "COUNT_DISTINCT" | "METRIC" | "CALC"
 export const TABLE_AGGS: Agg[] = ["SUM", "AVG", "MIN", "MAX", "COUNT", "COUNT_DISTINCT"]
 
 export type FilterOp =

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Calendar, Database, Hash, Layers, Link2, Plus, Search, Sigma, Table2, Type, Eye, Sparkles, ToggleLeft } from "lucide-react"
+import { Calendar, Database, Hash, Layers, Link2, Plus, Search, Sigma, Table2, Type, Eye, Sparkles, ToggleLeft, Calculator, Pencil } from "lucide-react"
 import type { Field, Source, SourceKind } from "@/lib/pivot/types"
 import { COUNT_ROWS_FIELD, fieldLabel } from "./labels"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
@@ -31,6 +31,7 @@ const KIND_ICON: Record<SourceKind, React.ReactNode> = {
 
 export function FamilyIcon({ field }: { field: Field }) {
   const cls = "size-3.5 shrink-0"
+  if (field.calc) return <Calculator className={`${cls} text-violet-600`} />
   if (field.role === "metric") return <Sigma className={`${cls} text-emerald-600`} />
   switch (field.family) {
     case "number":
@@ -60,6 +61,10 @@ interface Props {
   onQuickAdd: (f: Field) => void
   /** Add a table/view to the current data model (join). */
   onAddToModel: (o: { database: string; schema: string; name: string }) => void
+  /** Calculated-metric pseudo-fields of the current source. */
+  calcFields: Field[]
+  onNewCalc: () => void
+  onEditCalc: (f: Field) => void
 }
 
 export function CatalogPanel(p: Props) {
@@ -220,6 +225,27 @@ export function CatalogPanel(p: Props) {
           {!p.source && <p className="px-2 text-xs text-muted-foreground">{t("catalog.pickObject")}</p>}
           {p.fieldsLoading && <p className="px-2 text-xs text-muted-foreground">{t("catalog.loadingFields")}</p>}
           {p.fieldsError && <p className="px-2 text-xs text-destructive">{p.fieldsError}</p>}
+          {p.source && !p.fieldsLoading && !p.fieldsError && (
+            <div className="mb-2">
+              <div className="flex items-center px-2 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t("calc.group")}
+                </span>
+                <button
+                  onClick={p.onNewCalc}
+                  title={t("calc.newTitle")}
+                  className="ml-auto flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10"
+                >
+                  <Plus className="size-3" /> {t("calc.new")}
+                </button>
+              </div>
+              {p.calcFields
+                .filter((f) => !fieldFilter.trim() || f.name.toUpperCase().includes(fieldFilter.trim().toUpperCase()))
+                .map((f) => (
+                  <FieldItem key={f.id} field={f} onDoubleClick={() => p.onQuickAdd(f)} onEdit={() => p.onEditCalc(f)} />
+                ))}
+            </div>
+          )}
           {p.source &&
             !p.fieldsLoading &&
             groups.map((g) => (
@@ -242,7 +268,7 @@ export function CatalogPanel(p: Props) {
   )
 }
 
-function FieldItem({ field, onDoubleClick }: { field: Field; onDoubleClick: () => void }) {
+function FieldItem({ field, onDoubleClick, onEdit }: { field: Field; onDoubleClick: () => void; onEdit?: () => void }) {
   return (
     <div
       draggable
@@ -252,14 +278,23 @@ function FieldItem({ field, onDoubleClick }: { field: Field; onDoubleClick: () =
         e.dataTransfer.effectAllowed = "copyMove"
       }}
       onDoubleClick={onDoubleClick}
-      title={[field.entity ? `${field.entity}.${field.name}` : field.name, field.dataType, field.description]
+      title={[field.entity ? `${field.entity}.${field.name}` : field.name, field.calc?.formula ?? field.dataType, field.description]
         .filter(Boolean)
         .join("\n")}
-      className="flex cursor-grab select-none items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent active:cursor-grabbing"
+      className="group flex cursor-grab select-none items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent active:cursor-grabbing"
     >
       <FamilyIcon field={field} />
       <span className="truncate">{fieldLabel(field, field.id)}</span>
       {field.entity && <span className="ml-auto shrink-0 truncate text-[10px] text-muted-foreground">{field.entity}</span>}
+      {onEdit && (
+        <button
+          title={t("calc.edit")}
+          onClick={onEdit}
+          className="ml-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-primary/20 hover:text-primary group-hover:opacity-100"
+        >
+          <Pencil className="size-3" />
+        </button>
+      )}
     </div>
   )
 }
