@@ -2,6 +2,7 @@ import Image from "next/image"
 import { APP_TITLE, LOGO_SRC } from "@/lib/constants"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { LanguageToggle } from "@/components/language-toggle"
+import { WarehouseSelect } from "@/components/warehouse-select"
 
 /**
  * AppHeader — top navigation bar.
@@ -24,6 +25,7 @@ export function AppHeader() {
           {APP_TITLE}
         </span>
         <div className="ml-auto flex items-center gap-3">
+          <WarehouseSelect />
           <LanguageToggle />
           <ThemeToggle />
         </div>

@@ -134,6 +134,8 @@ export interface PivotResponse {
   rows: Record<string, unknown>[]
   truncated: boolean
   elapsedMs: number
+  /** Warehouse the query ran on (null if unknown). */
+  warehouse?: string | null
 }
 
 export const MAX_LIMIT = 50000

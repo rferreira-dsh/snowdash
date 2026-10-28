@@ -13,6 +13,10 @@ const pt: Dict = {
   // ---- app / header
   "app.description": "Análise ad-hoc estilo pivot sobre tabelas, views, modelos com joins e semantic views do Snowflake",
   "lang.label": "Idioma",
+  "wh.label": "Warehouse para executar as consultas",
+  "wh.default": "Warehouse padrão",
+  "wh.defaultNamed": "Padrão ({name})",
+  "wh.suspended": "suspenso",
 
   // ---- catalog panel
   "catalog.database": "Database",
@@ -114,6 +118,7 @@ const pt: Dict = {
   "status.grid": "{r} linhas × {c} colunas",
   "status.records": "{n} registros retornados",
   "status.truncated": "Resultado truncado no limite — refine com filtros ou aumente o limite",
+  "status.warehouse": "Warehouse: {name}",
   "status.pending": "Alterações pendentes — clique em Executar",
   "status.fields": "{d} dimensões · {m} {kind}",
   "status.measures": "medidas",
@@ -232,6 +237,7 @@ const pt: Dict = {
   "e.badSheets": "Planilhas inválidas",
   "e.needName": "Dê um nome ao SnowBook",
   "e.tooBig": "SnowBook grande demais",
+  "e.badWarehouse": "Warehouse \"{name}\" não está disponível para você",
   "e.bookNotFound": "SnowBook não encontrado",
   "e.badLevel": "level inválido",
   "e.required": "{name} é obrigatório",
@@ -297,6 +303,10 @@ const pt: Dict = {
 const en: Dict = {
   "app.description": "Ad-hoc pivot analysis over Snowflake tables, views, joined models and semantic views",
   "lang.label": "Language",
+  "wh.label": "Warehouse that runs the queries",
+  "wh.default": "Default warehouse",
+  "wh.defaultNamed": "Default ({name})",
+  "wh.suspended": "suspended",
 
   "catalog.database": "Database",
   "catalog.schema": "Schema",
@@ -392,6 +402,7 @@ const en: Dict = {
   "status.grid": "{r} rows × {c} columns",
   "status.records": "{n} records returned",
   "status.truncated": "Result truncated at the limit — refine with filters or raise the limit",
+  "status.warehouse": "Warehouse: {name}",
   "status.pending": "Pending changes — click Run",
   "status.fields": "{d} dimensions · {m} {kind}",
   "status.measures": "measures",
@@ -504,6 +515,7 @@ const en: Dict = {
   "e.badSheets": "Invalid sheets",
   "e.needName": "Give the SnowBook a name",
   "e.tooBig": "SnowBook is too large",
+  "e.badWarehouse": "Warehouse \"{name}\" is not available to you",
   "e.bookNotFound": "SnowBook not found",
   "e.badLevel": "invalid level",
   "e.required": "{name} is required",

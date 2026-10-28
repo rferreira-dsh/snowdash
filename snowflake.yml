@@ -5,8 +5,8 @@ entities:
     type: snowflake-app
     identifier:
       name: SNOWDASH
-      database: '"USER$ROGERIO.SILVA@TRIGGO.AI"'
-      schema: PUBLIC
+      database: GRUPOMULTI_ADMIN
+      schema: SNOWDASH_APP
     artifacts:
       - src: ./*
         dest: ./
@@ -19,5 +19,26 @@ entities:
           - .git
           - snowflake.log
 
-    query_warehouse: LAB_WH_XS
-    code_workspace: '"USER$ROGERIO.SILVA@TRIGGO.AI".PUBLIC.SNOWFLAKE_APPS'
+    query_warehouse: WH_MLK_SETUP
+    code_workspace: GRUPOMULTI_ADMIN.SNOWDASH_APP.SNOWFLAKE_APPS
+
+  snowdash_coverys_dev:
+    type: snowflake-app
+    identifier:
+      name: SNOWDASH
+      database: F_RFERREIRA_EDW
+      schema: SNOWDASH
+    artifacts:
+      - src: ./*
+        dest: ./
+        ignore:
+          - node_modules
+          - .env*
+          - __pycache__
+          - "*.pyc"
+          - .next
+          - .git
+          - snowflake.log
+
+    query_warehouse: REPORTING_XSMALL
+    code_workspace: F_RFERREIRA_EDW.SNOWDASH.SNOWFLAKE_APPS

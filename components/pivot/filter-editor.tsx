@@ -6,6 +6,7 @@ import type { Field, FilterOp, FilterRef, Source } from "@/lib/pivot/types"
 import { Button } from "@/components/ui/button"
 import { fieldLabel, formatMember } from "./labels"
 import { t } from "@/lib/i18n/client"
+import { useWarehouse } from "@/lib/warehouse-client"
 
 const SYMBOL: Partial<Record<FilterOp, string>> = { eq: "=", neq: "≠", gt: ">", gte: "≥", lt: "<", lte: "≤" }
 const opLabel = (op: FilterOp) => SYMBOL[op] ?? t(`op.${op}`)
@@ -48,6 +49,7 @@ export function FilterEditor({ source, field, filter, onApply, onClose }: Props)
   const [a, setA] = useState(String(filter.values[0] ?? ""))
   const [b, setB] = useState(String(filter.values[1] ?? ""))
   const [search, setSearch] = useState("")
+  const warehouse = useWarehouse()
   const [debounced, setDebounced] = useState("")
 
   useEffect(() => {
@@ -57,7 +59,7 @@ export function FilterEditor({ source, field, filter, onApply, onClose }: Props)
 
   const listMode = op === "in" || op === "not_in"
   const values = useQuery({
-    queryKey: ["values", source, field.id, debounced],
+    queryKey: ["values", source, field.id, debounced, warehouse],
     enabled: listMode,
     staleTime: 120_000,
     queryFn: async () => {
