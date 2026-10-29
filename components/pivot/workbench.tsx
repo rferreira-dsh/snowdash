@@ -40,6 +40,7 @@ import {
   type Source,
 } from "@/lib/pivot/types"
 import { buildGrid } from "@/lib/pivot/transform"
+import { setWarehouse, useWarehouse } from "@/lib/warehouse-client"
 import { makeAlias, modelSource, removeTable, suggestJoin, tableToModel } from "@/lib/pivot/model"
 import { ModelBar } from "./model-bar"
 import { BookBar } from "./book-bar"
@@ -50,6 +51,7 @@ import { FilterEditor, describeFilter } from "./filter-editor"
 import { PivotTable, pivotMatrix, dimHeader, type SortState } from "./pivot-table"
 import { PivotChart, type ChartKind } from "./pivot-chart"
 import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
+import { prefixFolders, pruneFolders } from "@/lib/pivot/folders"
 import { CalcEditor } from "./calc-editor"
 import { theme as getTheme, themeForIndex } from "./themes"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
@@ -192,6 +194,7 @@ export function Workbench() {
   const [sort, setSort] = useState<SortState>({ by: "label", dir: "asc" })
   const [notice, setNotice] = useState<string | null>(null)
   const [layouts, setLayouts] = useState<Record<string, PivotSpec>>({})
+  const warehouse = useWarehouse()
 
   // ---- active sheet ----------------------------------------------------------
   const active = sheets.find((s) => s.id === activeId) ?? sheets[0]
@@ -305,7 +308,7 @@ export function Workbench() {
   }, [auto, spec, fieldsQ.data])
 
   const result = useQuery({
-    queryKey: ["pivot", source, runSpec],
+    queryKey: ["pivot", source, runSpec, warehouse],
     queryFn: () => runPivot(source!, runSpec!),
     enabled: !!source && !!runSpec && !!fieldsQ.data && modelReady,
     staleTime: 60_000,
@@ -390,16 +393,25 @@ export function Workbench() {
           : t("n.noKey", { name: o.name }),
       )
       setShowModel(true)
-      setSource({ ...modelSource(next), calcs: source.calcs })
+      setSource({
+        ...modelSource(next),
+        calcs: source.calcs,
+        folders: source.kind === "MODEL" ? source.folders : prefixFolders(source.folders, next.tables[0].alias),
+      })
     } catch (e) {
       setNotice(e instanceof Error ? e.message : t("n.addFailed"))
     } finally {
       setAdding(false)
     }
   }
-  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs })
+  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs, folders: source?.folders })
   const removeFromModel = (alias: string) =>
-    source?.model && setSource({ ...modelSource(removeTable(source.model, alias)), calcs: source.calcs })
+    source?.model &&
+    setSource({
+      ...modelSource(removeTable(source.model, alias)),
+      calcs: source.calcs,
+      folders: source.folders && pruneFolders(source.folders, (id) => !id.startsWith(`${alias}.`)),
+    })
 
   // ---- calculated metrics (live on the source, so they are saved with the SnowBook) ----
   const [calcEdit, setCalcEdit] = useState<CalcMetric | "new" | null>(null)
@@ -414,7 +426,15 @@ export function Workbench() {
     setCalcEdit(null)
   }
   const deleteCalc = (id: string) => {
-    setSource((s) => (s ? { ...s, calcs: (s.calcs ?? []).filter((x) => x.id !== id) } : s))
+    setSource((s) =>
+      s
+        ? {
+            ...s,
+            calcs: (s.calcs ?? []).filter((x) => x.id !== id),
+            folders: s.folders && pruneFolders(s.folders, (f) => f !== CALC_PREFIX + id),
+          }
+        : s,
+    )
     setCalcEdit(null)
   }
 
@@ -444,7 +464,8 @@ export function Workbench() {
       const r = await fetch(`/api/snowbooks/${meta.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: meta.name, description: meta.description ?? null, source, sheets }),
+        // The current warehouse choice is saved as the book's preferred warehouse.
+        body: JSON.stringify({ name: meta.name, description: meta.description ?? null, source, sheets, warehouse: warehouse || null }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
@@ -474,6 +495,7 @@ export function Workbench() {
       })) as SheetState[]
       const meta: BookMeta = { id: j.id, name: j.name, description: j.description, updatedAt: j.updatedAt, updatedBy: j.updatedBy }
       setSource(j.source)
+      if (j.warehouse) setWarehouse(j.warehouse) // dropped by WarehouseSelect if not available to this user
       setDatabase(j.source.database)
       setSchema(j.source.schema)
       setSheets(ss)
@@ -764,6 +786,8 @@ export function Workbench() {
         calcFields={calcFields}
         onNewCalc={() => setCalcEdit("new")}
         onEditCalc={(f) => f.calc && setCalcEdit(f.calc)}
+        folders={source?.folders ?? []}
+        onFolders={(folders) => setSource((s) => (s ? { ...s, folders } : s))}
       />
       {calcEdit && source && (
         <CalcEditor
@@ -904,7 +928,10 @@ export function Workbench() {
         {notice && <div className="border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-200">{notice}</div>}
 
         {showSql && shownSql && (
-          <pre className="max-h-52 overflow-auto border-b border-border bg-muted/60 px-3 py-2 font-mono text-[11px] leading-relaxed">{shownSql}</pre>
+          <pre className="max-h-52 overflow-auto border-b border-border bg-muted/60 px-3 py-2 font-mono text-[11px] leading-relaxed">
+            {result.data?.warehouse ? `-- ${t("status.warehouse", { name: result.data.warehouse })}\n` : ""}
+            {shownSql}
+          </pre>
         )}
 
         {/* Result */}
@@ -958,6 +985,7 @@ export function Workbench() {
               </span>
               <span>{t("status.records", { n: result.data.rows.length.toLocaleString(currentLocale()) })}</span>
               <span>{(result.data.elapsedMs / 1000).toFixed(2)} s</span>
+              {result.data.warehouse && <span>{t("status.warehouse", { name: result.data.warehouse })}</span>}
               {result.data.truncated && (
                 <span className="font-medium text-amber-600">{t("status.truncated")}</span>
               )}

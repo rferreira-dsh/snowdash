@@ -6,8 +6,15 @@ import { parseSource } from "./pivot/catalog"
 import type { Source } from "./pivot/types"
 import { AppError } from "./i18n/messages"
 
-/** Fully-qualified table; configurable via env, never from user input. */
-const TABLE = process.env.SNOWDASH_BOOKS_TABLE || "LABS.SNOWDASH.SNOWBOOKS"
+/**
+ * Fully-qualified table; configurable via env, never from user input.
+ * Defaults to SNOWBOOKS in the service's own database/schema (set by SPCS).
+ */
+const TABLE =
+  process.env.SNOWDASH_BOOKS_TABLE ||
+  (process.env.SNOWFLAKE_DATABASE && process.env.SNOWFLAKE_SCHEMA
+    ? `${process.env.SNOWFLAKE_DATABASE}.${process.env.SNOWFLAKE_SCHEMA}.SNOWBOOKS`
+    : "LABS.SNOWDASH.SNOWBOOKS")
 const MAX_JSON_BYTES = 1_000_000
 const ID_RE = /^[0-9a-f-]{36}$/i
 
@@ -27,6 +34,8 @@ export interface SnowBook {
   description?: string | null
   source: Source
   sheets: Sheet[]
+  /** Preferred warehouse; stored inside the SOURCE variant (no extra column). */
+  warehouse?: string | null
   createdBy?: string | null
   createdAt?: string | null
   updatedBy?: string | null
@@ -77,12 +86,14 @@ export async function getBook(id: string): Promise<SnowBook | null> {
   const rows = await querySnowflake(`SELECT * FROM ${TABLE} WHERE ID = ?`, { binds: [id] })
   const r = rows[0]
   if (!r) return null
+  const { warehouse, ...source } = json(r.SOURCE) as Source & { warehouse?: unknown }
   return {
     id: String(r.ID),
     name: String(r.NAME),
     description: r.DESCRIPTION ?? null,
-    source: json(r.SOURCE),
+    source,
     sheets: json(r.SHEETS),
+    warehouse: typeof warehouse === "string" ? warehouse : null,
     createdBy: r.CREATED_BY ?? null,
     createdAt: iso(r.CREATED_AT),
     updatedBy: r.UPDATED_BY ?? null,
@@ -119,7 +130,10 @@ export async function saveBook(id: string, body: Record<string, unknown>): Promi
     throw new BookError("e.badKind")
   }
   const sheets = parseSheets(body.sheets)
-  const srcJson = JSON.stringify(source)
+  // Only a name is stored; it is re-validated against the user's warehouses whenever used.
+  const warehouse =
+    typeof body.warehouse === "string" && body.warehouse.trim() ? body.warehouse.trim().slice(0, 255) : undefined
+  const srcJson = JSON.stringify(warehouse ? { ...source, warehouse } : source)
   const sheetsJson = JSON.stringify(sheets)
   if (srcJson.length + sheetsJson.length > MAX_JSON_BYTES) throw new BookError("e.tooBig")
 

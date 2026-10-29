@@ -3,6 +3,7 @@
 import { userQuery } from "./caller"
 import { quoteIdent } from "./sql"
 import { AppError } from "../i18n/messages"
+import { parseFolders } from "./folders"
 import {
   CURRENCIES,
   MAX_CALCS,
@@ -212,6 +213,7 @@ export function parseSource(input: unknown): Source {
   const src: Source = { database: s.database as string, schema: s.schema as string, name: s.name as string, kind }
   if (kind === "MODEL") src.model = parseModel(s.model)
   if (s.calcs !== undefined) src.calcs = parseCalcs(s.calcs)
+  if (s.folders !== undefined) src.folders = parseFolders(s.folders)
   return src
 }
 

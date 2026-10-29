@@ -5,11 +5,13 @@
  *  - `t(key, vars)` reads the current language from a module-level variable, so it can be
  *    used inside plain helpers (labels, formatters) as well as components.
  *  - <I18nProvider> owns the language state, persists it, and re-renders the tree on change.
- *  - Same-origin `/api/*` fetches get the `x-snowdash-lang` header so server errors come back localized.
+ *  - Same-origin `/api/*` fetches get the `x-snowdash-lang` header so server errors come back localized,
+ *    plus the chosen warehouse (lib/warehouse-client.ts), if any.
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
 import { isLang, LANG_HEADER, locale, translate, type Lang, type Vars } from "./messages"
+import { getWarehouse, WAREHOUSE_HEADER } from "@/lib/warehouse-client"
 
 const STORAGE_KEY = "snowdash:lang"
 let currentLang: Lang = "pt"
@@ -37,6 +39,8 @@ function patchFetch() {
     if (url.startsWith("/api/")) {
       const headers = new Headers(init?.headers)
       headers.set(LANG_HEADER, currentLang)
+      const wh = getWarehouse()
+      if (wh && !headers.has(WAREHOUSE_HEADER)) headers.set(WAREHOUSE_HEADER, wh)
       return orig(input, { ...init, headers })
     }
     return orig(input, init)

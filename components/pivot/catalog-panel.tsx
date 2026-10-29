@@ -1,12 +1,13 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Calendar, Database, Hash, Layers, Link2, Plus, Search, Sigma, Table2, Type, Eye, Sparkles, ToggleLeft, Calculator, Pencil } from "lucide-react"
-import type { Field, Source, SourceKind } from "@/lib/pivot/types"
+import { Calendar, Database, Hash, Layers, Link2, Plus, Search, Sigma, Table2, Type, Eye, Sparkles, ToggleLeft, Calculator, Pencil, Folder, FolderOpen, FolderPlus, Trash2, X } from "lucide-react"
+import { MAX_FOLDERS, type Field, type FieldFolder, type Source, type SourceKind } from "@/lib/pivot/types"
+import { moveToFolder } from "@/lib/pivot/folders"
 import { COUNT_ROWS_FIELD, fieldLabel } from "./labels"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
-import { DRAG_MIME, type DragPayload } from "./dnd"
+import { DRAG_MIME, readPayload, type DragPayload } from "./dnd"
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url)
@@ -65,10 +66,44 @@ interface Props {
   calcFields: Field[]
   onNewCalc: () => void
   onEditCalc: (f: Field) => void
+  /** User-defined field folders (saved with the SnowBook). */
+  folders: FieldFolder[]
+  onFolders: (f: FieldFolder[]) => void
 }
+
+const SPLIT_KEY = "snowdash:objectsHeight"
+const MIN_PANE = 80
 
 export function CatalogPanel(p: Props) {
   const { lang } = useLang()
+  // Height (px) of the Objects pane; null = default 40% of the remaining space.
+  const [objHeight, setObjHeight] = useState<number | null>(null)
+  const splitRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const v = Number(localStorage.getItem(SPLIT_KEY))
+    if (v > 0) setObjHeight(v)
+  }, [])
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const box = splitRef.current
+    if (!box) return
+    e.preventDefault()
+    const handle = e.currentTarget
+    handle.setPointerCapture(e.pointerId)
+    const top = box.getBoundingClientRect().top
+    const max = box.clientHeight - MIN_PANE
+    let h = objHeight ?? 0
+    const move = (ev: PointerEvent) => {
+      h = Math.round(Math.min(Math.max(ev.clientY - top, MIN_PANE), Math.max(MIN_PANE, max)))
+      setObjHeight(h)
+    }
+    const up = () => {
+      handle.removeEventListener("pointermove", move)
+      handle.removeEventListener("pointerup", up)
+      if (h > 0) localStorage.setItem(SPLIT_KEY, String(h))
+    }
+    handle.addEventListener("pointermove", move)
+    handle.addEventListener("pointerup", up)
+  }
   const [objFilter, setObjFilter] = useState("")
   const [fieldFilter, setFieldFilter] = useState("")
 
@@ -77,6 +112,11 @@ export function CatalogPanel(p: Props) {
     queryFn: () => getJson<{ name: string; kind: string }[]>("/api/catalog?level=databases"),
     staleTime: 300_000,
   })
+  // A database restored from another session/account may not exist here; drop it instead of failing every call.
+  useEffect(() => {
+    if (dbs.data && p.database && !dbs.data.some((d) => d.name === p.database)) p.onDatabase("")
+  }, [dbs.data, p.database])
+
   const schemas = useQuery({
     queryKey: ["schemas", p.database],
     queryFn: () => getJson<string[]>(`/api/catalog?level=schemas&database=${encodeURIComponent(p.database)}`),
@@ -98,9 +138,44 @@ export function CatalogPanel(p: Props) {
     return (objects.data ?? []).filter((o) => !q || o.name.toUpperCase().includes(q))
   }, [objects.data, objFilter])
 
+  const filed = useMemo(() => new Set(p.folders.flatMap((f) => f.fieldIds)), [p.folders])
+  const matches = (f: Field) => {
+    const q = fieldFilter.trim().toUpperCase()
+    return !q || fieldLabel(f, f.id).toUpperCase().includes(q)
+  }
+  /** Every field that can be filed into a folder, by id. */
+  const fileable = useMemo(() => {
+    const m = new Map<string, Field>()
+    for (const f of p.fields ?? []) m.set(f.id, f)
+    if (p.source && p.source.kind !== "SEMANTIC_VIEW") m.set(COUNT_ROWS_FIELD.id, COUNT_ROWS_FIELD)
+    for (const f of p.calcFields) m.set(f.id, f)
+    return m
+  }, [p.fields, p.calcFields, p.source, lang])
+
+  const [editingFolder, setEditingFolder] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [overFolder, setOverFolder] = useState<string | null>(null)
+  const newFolder = () => {
+    if (p.folders.length >= MAX_FOLDERS) return
+    const id = crypto.randomUUID()
+    p.onFolders([...p.folders, { id, name: t("folder.defaultName"), fieldIds: [] }])
+    setEditingFolder(id)
+  }
+  const dropInFolder = (e: React.DragEvent, folderId: string | null, beforeId?: string) => {
+    const d = readPayload(e)
+    setOverFolder(null)
+    // Shelf pills are not catalog fields; ignore them here.
+    if (!d || d.from || !fileable.has(d.fieldId)) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (folderId === null && !d.folder) return
+    if (beforeId === d.fieldId) return
+    p.onFolders(moveToFolder(p.folders, d.fieldId, folderId, beforeId))
+  }
+
   const groups = useMemo(() => {
     const q = fieldFilter.trim().toUpperCase()
-    const all = (p.fields ?? []).filter((f) => !q || f.name.toUpperCase().includes(q))
+    const all = (p.fields ?? []).filter((f) => !filed.has(f.id) && (!q || f.name.toUpperCase().includes(q)))
     const isSV = p.source?.kind === "SEMANTIC_VIEW"
     if (p.source?.kind === "MODEL") {
       const groups = (p.source.model?.tables ?? []).map((t) => ({
@@ -109,17 +184,18 @@ export function CatalogPanel(p: Props) {
           .filter((f) => f.entity === t.alias)
           .sort((a, b) => Number(a.role !== "dimension") - Number(b.role !== "dimension")),
       }))
-      if (!q || t("field.countRows").toUpperCase().includes(q)) groups.unshift({ title: t("catalog.general"), items: [COUNT_ROWS_FIELD] })
+      if (!filed.has(COUNT_ROWS_FIELD.id) && (!q || t("field.countRows").toUpperCase().includes(q)))
+        groups.unshift({ title: t("catalog.general"), items: [COUNT_ROWS_FIELD] })
       return groups
     }
     const dims = all.filter((f) => f.role === "dimension")
     const meas = all.filter((f) => f.role !== "dimension")
-    if (!isSV && (!q || t("field.countRows").toUpperCase().includes(q))) meas.unshift(COUNT_ROWS_FIELD)
+    if (!isSV && !filed.has(COUNT_ROWS_FIELD.id) && (!q || t("field.countRows").toUpperCase().includes(q))) meas.unshift(COUNT_ROWS_FIELD)
     return [
       { title: t("catalog.dimensions"), items: dims },
       { title: isSV ? t("catalog.metrics") : t("catalog.measures"), items: meas },
     ]
-  }, [p.fields, p.source, fieldFilter, lang])
+  }, [p.fields, p.source, fieldFilter, lang, filed])
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card">
@@ -156,8 +232,12 @@ export function CatalogPanel(p: Props) {
         )}
       </div>
 
+      <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
       {/* Objects */}
-      <div className="flex min-h-0 basis-2/5 flex-col border-b border-border">
+      <div
+        className={`flex min-h-0 flex-col ${objHeight == null ? "basis-2/5" : "shrink-0"}`}
+        style={objHeight == null ? undefined : { height: objHeight, maxHeight: `calc(100% - ${MIN_PANE}px)` }}
+      >
         <div className="flex items-center gap-2 px-3 pt-2 pb-1">
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("catalog.objects")}</span>
           <span className="ml-auto text-[11px] text-muted-foreground">{objects.data?.length ?? ""}</span>
@@ -210,6 +290,18 @@ export function CatalogPanel(p: Props) {
         </div>
       </div>
 
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        title={t("catalog.resize")}
+        onPointerDown={startResize}
+        onDoubleClick={() => {
+          setObjHeight(null)
+          localStorage.removeItem(SPLIT_KEY)
+        }}
+        className="relative h-1.5 shrink-0 cursor-row-resize touch-none border-y border-border bg-muted/40 hover:bg-primary/30 active:bg-primary/40"
+      />
+
       {/* Fields */}
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -221,10 +313,116 @@ export function CatalogPanel(p: Props) {
         <div
           className="min-h-0 flex-1 overflow-auto px-1.5 pb-3"
           onDragOver={(e) => e.dataTransfer.types.includes(DRAG_MIME) && e.preventDefault()}
+          onDrop={(e) => dropInFolder(e, null)}
         >
           {!p.source && <p className="px-2 text-xs text-muted-foreground">{t("catalog.pickObject")}</p>}
           {p.fieldsLoading && <p className="px-2 text-xs text-muted-foreground">{t("catalog.loadingFields")}</p>}
           {p.fieldsError && <p className="px-2 text-xs text-destructive">{p.fieldsError}</p>}
+          {p.source && !p.fieldsLoading && !p.fieldsError && (
+            <div className="mb-2">
+              <div className="flex items-center px-2 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t("folder.group")}
+                </span>
+                <button
+                  onClick={newFolder}
+                  disabled={p.folders.length >= MAX_FOLDERS}
+                  title={t("folder.newTitle")}
+                  className="ml-auto flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
+                >
+                  <FolderPlus className="size-3" /> {t("folder.new")}
+                </button>
+              </div>
+              {p.folders.map((folder) => {
+                const items = folder.fieldIds.map((id) => fileable.get(id)).filter((f): f is Field => !!f && matches(f))
+                if (fieldFilter.trim() && !items.length) return null
+                const open = !collapsed.has(folder.id) || !!fieldFilter.trim()
+                return (
+                  <div
+                    key={folder.id}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer.types.includes(DRAG_MIME)) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setOverFolder(folder.id)
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverFolder(null)
+                    }}
+                    onDrop={(e) => dropInFolder(e, folder.id)}
+                    className={`rounded ${overFolder === folder.id ? "bg-primary/10 ring-1 ring-primary/40" : ""}`}
+                  >
+                    <div className="group flex items-center gap-1.5 rounded px-2 py-1 text-xs hover:bg-accent">
+                      <button
+                        onClick={() =>
+                          setCollapsed((s) => {
+                            const n = new Set(s)
+                            if (n.has(folder.id)) n.delete(folder.id)
+                            else n.add(folder.id)
+                            return n
+                          })
+                        }
+                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      >
+                        {open ? (
+                          <FolderOpen className="size-3.5 shrink-0 text-amber-600" />
+                        ) : (
+                          <Folder className="size-3.5 shrink-0 text-amber-600" />
+                        )}
+                        {editingFolder === folder.id ? (
+                          <FolderName
+                            initial={folder.name}
+                            onDone={(name) => {
+                              setEditingFolder(null)
+                              if (name && name !== folder.name)
+                                p.onFolders(p.folders.map((f) => (f.id === folder.id ? { ...f, name } : f)))
+                            }}
+                          />
+                        ) : (
+                          <span className="truncate font-medium" onDoubleClick={() => setEditingFolder(folder.id)}>
+                            {folder.name}
+                          </span>
+                        )}
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{folder.fieldIds.length}</span>
+                      </button>
+                      <button
+                        title={t("folder.rename")}
+                        onClick={() => setEditingFolder(folder.id)}
+                        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-primary/20 hover:text-primary group-hover:opacity-100"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
+                        title={t("folder.delete")}
+                        onClick={() => p.onFolders(p.folders.filter((f) => f.id !== folder.id))}
+                        className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                    {open && (
+                      <div className="ml-3 border-l border-border pl-1">
+                        {items.map((f) => (
+                          <div key={f.id} onDrop={(e) => dropInFolder(e, folder.id, f.id)}>
+                            <FieldItem
+                              field={f}
+                              folder={folder.id}
+                              onDoubleClick={() => p.onQuickAdd(f)}
+                              onEdit={f.calc ? () => p.onEditCalc(f) : undefined}
+                              onUnfile={() => p.onFolders(moveToFolder(p.folders, f.id, null))}
+                            />
+                          </div>
+                        ))}
+                        {!folder.fieldIds.length && (
+                          <p className="px-2 py-1 text-[11px] italic text-muted-foreground">{t("folder.empty")}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {p.source && !p.fieldsLoading && !p.fieldsError && (
             <div className="mb-2">
               <div className="flex items-center px-2 py-1">
@@ -240,7 +438,7 @@ export function CatalogPanel(p: Props) {
                 </button>
               </div>
               {p.calcFields
-                .filter((f) => !fieldFilter.trim() || f.name.toUpperCase().includes(fieldFilter.trim().toUpperCase()))
+                .filter((f) => !filed.has(f.id) && (!fieldFilter.trim() || f.name.toUpperCase().includes(fieldFilter.trim().toUpperCase())))
                 .map((f) => (
                   <FieldItem key={f.id} field={f} onDoubleClick={() => p.onQuickAdd(f)} onEdit={() => p.onEditCalc(f)} />
                 ))}
@@ -264,16 +462,49 @@ export function CatalogPanel(p: Props) {
           {t("catalog.hint")}
         </p>
       </div>
+      </div>
     </aside>
   )
 }
 
-function FieldItem({ field, onDoubleClick, onEdit }: { field: Field; onDoubleClick: () => void; onEdit?: () => void }) {
+function FolderName({ initial, onDone }: { initial: string; onDone: (name: string) => void }) {
+  const [v, setV] = useState(initial)
+  return (
+    <input
+      autoFocus
+      value={v}
+      maxLength={100}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => onDone(v.trim())}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+        if (e.key === "Escape") onDone("")
+      }}
+      className="h-5 min-w-0 flex-1 rounded border border-input bg-background px-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+    />
+  )
+}
+
+function FieldItem({
+  field,
+  onDoubleClick,
+  onEdit,
+  folder,
+  onUnfile,
+}: {
+  field: Field
+  onDoubleClick: () => void
+  onEdit?: () => void
+  folder?: string
+  onUnfile?: () => void
+}) {
   return (
     <div
       draggable
       onDragStart={(e) => {
-        const payload: DragPayload = { fieldId: field.id }
+        const payload: DragPayload = { fieldId: field.id, ...(folder ? { folder } : {}) }
         e.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload))
         e.dataTransfer.effectAllowed = "copyMove"
       }}
@@ -293,6 +524,15 @@ function FieldItem({ field, onDoubleClick, onEdit }: { field: Field; onDoubleCli
           className="ml-auto rounded p-0.5 text-muted-foreground opacity-0 hover:bg-primary/20 hover:text-primary group-hover:opacity-100"
         >
           <Pencil className="size-3" />
+        </button>
+      )}
+      {onUnfile && (
+        <button
+          title={t("folder.removeField")}
+          onClick={onUnfile}
+          className={`${onEdit || field.entity ? "" : "ml-auto"} rounded p-0.5 text-muted-foreground opacity-0 hover:bg-primary/20 hover:text-primary group-hover:opacity-100`}
+        >
+          <X className="size-3" />
         </button>
       )}
     </div>

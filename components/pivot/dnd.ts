@@ -6,6 +6,8 @@ export interface DragPayload {
   fieldId: string
   /** Present when dragging an existing pill (move instead of add). */
   from?: { shelf: ShelfId; index: number }
+  /** Present when dragging a field out of a catalog folder. */
+  folder?: string
 }
 
 export function readPayload(e: React.DragEvent): DragPayload | null {

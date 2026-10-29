@@ -3,7 +3,7 @@
  *   POST /api/pivot  { source, spec }  →  PivotResponse
  */
 
-import { userQueryLongRunning } from "@/lib/pivot/caller"
+import { defaultWarehouse, requestedWarehouse, userQueryLongRunning } from "@/lib/pivot/caller"
 import { getCachedFields } from "@/lib/pivot/cache"
 import { parseSource } from "@/lib/pivot/catalog"
 import { buildPivotQuery } from "@/lib/pivot/sql"
@@ -41,8 +41,9 @@ export async function POST(req: Request) {
     const built = buildPivotQuery(source, fields, spec)
     sql = built.sql
 
+    const warehouse = await requestedWarehouse()
     const t0 = Date.now()
-    const raw = await userQueryLongRunning(built.sql, built.binds, { maxWaitMs: 5 * 60 * 1000 })
+    const raw = await userQueryLongRunning(built.sql, built.binds, { maxWaitMs: 5 * 60 * 1000, ...(warehouse ? { warehouse } : {}) })
     const elapsedMs = Date.now() - t0
 
     const truncated = raw.length > built.limit
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
       for (const [k, v] of Object.entries(r)) o[k] = normalize(v)
       return o
     })
-    const res: PivotResponse = { sql: built.sql, rows, truncated, elapsedMs }
+    const res: PivotResponse = { sql: built.sql, rows, truncated, elapsedMs, warehouse: warehouse ?? (await defaultWarehouse()) }
     return Response.json(res)
   } catch (e) {
     return errorResponse(e, req, "pivot", { sql })

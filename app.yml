@@ -38,5 +38,12 @@ run:
 
 profile:
   label: "SnowDash"
-  description: "Drag-and-drop ad-hoc pivot analysis over tables, views, joined data models and semantic views, with saved SnowBooks."
+  description: "Análise ad-hoc estilo pivot (arrastar e soltar) sobre tabelas, views, modelos com joins e semantic views, com SnowBooks salvos."
   icon: public/icon.png
+# SNOWDASH_BOOKS_TABLE defaults to <service db>.<service schema>.SNOWBOOKS.
+
+environment_variables:
+  # Services in these databases browse/query data with OWNER's rights (no caller
+  # grants there). Coverys DEV only — every user sees what EDW_ADMIN sees.
+  - name: SNOWDASH_OWNER_RIGHTS_DBS
+    value: "F_RFERREIRA_EDW"
