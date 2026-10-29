@@ -32,7 +32,19 @@ export interface Source {
   model?: DataModel
   /** User-defined calculated metrics (saved with the SnowBook). */
   calcs?: CalcMetric[]
+  /** User-defined field folders for the catalog panel (saved with the SnowBook). */
+  folders?: FieldFolder[]
 }
+
+export interface FieldFolder {
+  id: string
+  name: string
+  /** Field ids in display order; a field belongs to at most one folder. */
+  fieldIds: string[]
+}
+
+export const MAX_FOLDERS = 50
+export const MAX_FOLDER_FIELDS = 500
 
 export type CalcFormat = "number" | "percent" | "currency"
 

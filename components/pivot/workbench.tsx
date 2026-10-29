@@ -51,6 +51,7 @@ import { FilterEditor, describeFilter } from "./filter-editor"
 import { PivotTable, pivotMatrix, dimHeader, type SortState } from "./pivot-table"
 import { PivotChart, type ChartKind } from "./pivot-chart"
 import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
+import { prefixFolders, pruneFolders } from "@/lib/pivot/folders"
 import { CalcEditor } from "./calc-editor"
 import { theme as getTheme, themeForIndex } from "./themes"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
@@ -392,16 +393,25 @@ export function Workbench() {
           : t("n.noKey", { name: o.name }),
       )
       setShowModel(true)
-      setSource({ ...modelSource(next), calcs: source.calcs })
+      setSource({
+        ...modelSource(next),
+        calcs: source.calcs,
+        folders: source.kind === "MODEL" ? source.folders : prefixFolders(source.folders, next.tables[0].alias),
+      })
     } catch (e) {
       setNotice(e instanceof Error ? e.message : t("n.addFailed"))
     } finally {
       setAdding(false)
     }
   }
-  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs })
+  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs, folders: source?.folders })
   const removeFromModel = (alias: string) =>
-    source?.model && setSource({ ...modelSource(removeTable(source.model, alias)), calcs: source.calcs })
+    source?.model &&
+    setSource({
+      ...modelSource(removeTable(source.model, alias)),
+      calcs: source.calcs,
+      folders: source.folders && pruneFolders(source.folders, (id) => !id.startsWith(`${alias}.`)),
+    })
 
   // ---- calculated metrics (live on the source, so they are saved with the SnowBook) ----
   const [calcEdit, setCalcEdit] = useState<CalcMetric | "new" | null>(null)
@@ -416,7 +426,15 @@ export function Workbench() {
     setCalcEdit(null)
   }
   const deleteCalc = (id: string) => {
-    setSource((s) => (s ? { ...s, calcs: (s.calcs ?? []).filter((x) => x.id !== id) } : s))
+    setSource((s) =>
+      s
+        ? {
+            ...s,
+            calcs: (s.calcs ?? []).filter((x) => x.id !== id),
+            folders: s.folders && pruneFolders(s.folders, (f) => f !== CALC_PREFIX + id),
+          }
+        : s,
+    )
     setCalcEdit(null)
   }
 
@@ -768,6 +786,8 @@ export function Workbench() {
         calcFields={calcFields}
         onNewCalc={() => setCalcEdit("new")}
         onEditCalc={(f) => f.calc && setCalcEdit(f.calc)}
+        folders={source?.folders ?? []}
+        onFolders={(folders) => setSource((s) => (s ? { ...s, folders } : s))}
       />
       {calcEdit && source && (
         <CalcEditor
