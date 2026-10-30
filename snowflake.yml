@@ -18,6 +18,10 @@ entities:
           - .next
           - .git
           - snowflake.log
+          - "snowflake.*.yml"
+          - .DS_Store
+          - "*.tsbuildinfo"
+          - output
 
     query_warehouse: WH_MLK_SETUP
     code_workspace: GRUPOMULTI_ADMIN.SNOWDASH_APP.SNOWFLAKE_APPS
@@ -39,6 +43,10 @@ entities:
           - .next
           - .git
           - snowflake.log
+          - "snowflake.*.yml"
+          - .DS_Store
+          - "*.tsbuildinfo"
+          - output
 
     query_warehouse: REPORTING_XSMALL
     code_workspace: F_RFERREIRA_EDW.SNOWDASH.SNOWFLAKE_APPS
