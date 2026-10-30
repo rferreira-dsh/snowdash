@@ -20,3 +20,6 @@ snowflake.log
 *.log
 .vscode/
 .idea/
+
+# Local per-account deploy manifests
+snowflake.*.yml
