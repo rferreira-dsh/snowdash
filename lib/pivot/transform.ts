@@ -16,6 +16,8 @@ export interface PivotGrid {
   /** Totals across rows for each column key (or the grand total when no column dims). */
   colTotals: Map<string, unknown[]>
   grand: unknown[] | null
+  /** Every aggregate (detail, subtotals, totals) keyed by aggKey(rowPrefix, colPrefix). */
+  agg: Map<string, unknown[]>
 }
 
 export function keyStr(k: Key): string {
@@ -24,6 +26,15 @@ export function keyStr(k: Key): string {
 
 export function cellKey(rk: Key, ck: Key): string {
   return keyStr(rk) + SEP + SEP + keyStr(ck)
+}
+
+/** Key for an aggregate at a given row/col prefix; prefix lengths are the grouping depths. */
+export function aggKey(rk: Key, ck: Key): string {
+  return `${rk.length}:${ck.length}:${cellKey(rk, ck)}`
+}
+
+export function aggAt(grid: PivotGrid, rk: Key, ck: Key): unknown[] | undefined {
+  return grid.agg.get(aggKey(rk, ck))
 }
 
 function flag(v: unknown): number {
@@ -39,34 +50,28 @@ export function buildGrid(rows: Record<string, unknown>[], spec: PivotSpec): Piv
   const cells = new Map<string, unknown[]>()
   const rowTotals = new Map<string, unknown[]>()
   const colTotals = new Map<string, unknown[]>()
+  const agg = new Map<string, unknown[]>()
   let grand: unknown[] | null = null
 
   for (const r of rows) {
-    const rk = Array.from({ length: nr }, (_, i) => r[`r${i}`])
-    const ck = Array.from({ length: nc }, (_, i) => r[`c${i}`])
+    // __gr/__gc = number of rolled-up dims on each axis (0 = detail).
+    const dr = Math.max(0, nr - flag(r.__gr))
+    const dc = Math.max(0, nc - flag(r.__gc))
+    const rk = Array.from({ length: dr }, (_, i) => r[`r${i}`])
+    const ck = Array.from({ length: dc }, (_, i) => r[`c${i}`])
     const vals = Array.from({ length: nv }, (_, i) => r[`v${i}`])
-    const gr = flag(r.__gr)
-    const gc = flag(r.__gc)
-    if (gr === 0 && gc === 0) {
+    agg.set(aggKey(rk, ck), vals)
+    if (dr === nr && dc === nc) {
       const rs = keyStr(rk)
       const cs = keyStr(ck)
       if (!rowSeen.has(rs)) rowSeen.set(rs, rk)
       if (!colSeen.has(cs)) colSeen.set(cs, ck)
       cells.set(cellKey(rk, ck), vals)
-    } else if (gr === 0 && gc === 1) {
-      rowTotals.set(keyStr(rk), vals)
-    } else if (gr === 1 && gc === 0) {
-      if (nr === 0) continue
-      colTotals.set(keyStr(ck), vals)
-    } else {
-      grand = vals
     }
-  }
-
-  // With no row dims the only "column total" is the grand total; with no col dims likewise.
-  if (nc === 0 && nr > 0) {
-    const g = colTotals.get("")
-    if (g) grand = g
+    const detail = dr === nr && dc === nc
+    if (dr === 0 && dc === 0 && !(detail && nr + nc > 0)) grand = vals
+    if (nc > 0 && dr === nr && dc === 0) rowTotals.set(keyStr(rk), vals)
+    if (nr > 0 && dr === 0 && dc === nc) colTotals.set(keyStr(ck), vals)
   }
 
   return {
@@ -76,6 +81,7 @@ export function buildGrid(rows: Record<string, unknown>[], spec: PivotSpec): Piv
     rowTotals,
     colTotals,
     grand,
+    agg,
   }
 }
 

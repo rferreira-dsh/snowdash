@@ -181,16 +181,29 @@ function validateSpec(spec: PivotSpec) {
   }
 }
 
-/** Distinct sets of row/col presence used for totals: [hasRows, hasCols]. */
-function groupingSets(spec: PivotSpec): [boolean, boolean][] {
-  const r = spec.rows.length > 0
-  const c = spec.columns.length > 0
-  const sets: [boolean, boolean][] = [[r, c]]
-  if (spec.totals && spec.values.length > 0) {
-    if (r && c) sets.push([true, false], [false, true], [false, false])
-    else if (r || c) sets.push([false, false])
+/** Depths (number of leading dims kept) per axis needed for totals/subtotals. */
+function axisDepths(n: number, spec: PivotSpec): number[] {
+  const out = [n]
+  if (spec.values.length === 0) return out
+  if (spec.subtotals) for (let d = n - 1; d >= 1; d--) out.push(d)
+  if (spec.totals && n > 0) out.push(0)
+  return out
+}
+
+/** Distinct grouping sets as [rowDepth, colDepth]; the first one is the detail level. */
+function groupingSets(spec: PivotSpec): [number, number][] {
+  const sets: [number, number][] = []
+  for (const r of axisDepths(spec.rows.length, spec)) {
+    for (const c of axisDepths(spec.columns.length, spec)) sets.push([r, c])
   }
   return sets
+}
+
+/** Number of rolled-up dims (0 = detail) — sum of GROUPING() per dim. */
+function groupingLevel(exprs: string[]): string {
+  if (exprs.length === 0) return "0"
+  if (exprs.length === 1) return `GROUPING(${exprs[0]})`
+  return `(${exprs.map((e) => `GROUPING(${e})`).join(" + ")})`
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +252,8 @@ export function buildTableQuery(src: Source, fields: Field[], spec: PivotSpec) {
   const sets = groupingSets(spec)
   const useSets = sets.length > 1
   if (useSets) {
-    select.push(rowExprs.length ? `GROUPING(${rowExprs[0]}) AS "__gr"` : `0 AS "__gr"`)
-    select.push(colExprs.length ? `GROUPING(${colExprs[0]}) AS "__gc"` : `0 AS "__gc"`)
+    select.push(`${groupingLevel(rowExprs)} AS "__gr"`)
+    select.push(`${groupingLevel(colExprs)} AS "__gc"`)
   } else {
     select.push(`0 AS "__gr"`, `0 AS "__gc"`)
   }
@@ -251,7 +264,7 @@ export function buildTableQuery(src: Source, fields: Field[], spec: PivotSpec) {
   let groupBy = ""
   if (dims.length && valExprs.length) {
     if (useSets) {
-      const parts = sets.map(([r, c]) => `(${[...(r ? rowExprs : []), ...(c ? colExprs : [])].join(", ")})`)
+      const parts = sets.map(([r, c]) => `(${[...rowExprs.slice(0, r), ...colExprs.slice(0, c)].join(", ")})`)
       groupBy = `GROUP BY GROUPING SETS (${parts.join(", ")})`
     } else {
       groupBy = `GROUP BY ${dims.join(", ")}`
@@ -319,10 +332,10 @@ export function buildSemanticQuery(src: Source, fields: Field[], spec: PivotSpec
   const binds: Bind[] = []
   const subqueries: string[] = []
 
-  for (const [hasR, hasC] of groupingSets(spec)) {
+  for (const [dr, dc] of groupingSets(spec)) {
     const dimsClause = [
-      ...(hasR ? rowF.map((f, i) => `${svRef(f)} AS "r${i}"`) : []),
-      ...(hasC ? colF.map((f, i) => `${svRef(f)} AS "c${i}"`) : []),
+      ...rowF.slice(0, dr).map((f, i) => `${svRef(f)} AS "r${i}"`),
+      ...colF.slice(0, dc).map((f, i) => `${svRef(f)} AS "c${i}"`),
     ]
     const metricsClause = metricF.map((f) => `${svRef(f)} AS ${metricAlias.get(f.id)}`)
     const where = buildFilters(spec.filters, map, svRef, binds, false)
@@ -338,11 +351,11 @@ export function buildSemanticQuery(src: Source, fields: Field[], spec: PivotSpec
       .join("\n")
 
     const cols = [
-      ...rowF.map((_, i) => (hasR ? `"r${i}"` : `NULL AS "r${i}"`)),
-      ...colF.map((_, i) => (hasC ? `"c${i}"` : `NULL AS "c${i}"`)),
+      ...rowF.map((_, i) => (i < dr ? `"r${i}"` : `NULL AS "r${i}"`)),
+      ...colF.map((_, i) => (i < dc ? `"c${i}"` : `NULL AS "c${i}"`)),
       ...valExprs.map((e, i) => `${e} AS "v${i}"`),
-      `${hasR || rowF.length === 0 ? 0 : 1} AS "__gr"`,
-      `${hasC || colF.length === 0 ? 0 : 1} AS "__gc"`,
+      `${rowF.length - dr} AS "__gr"`,
+      `${colF.length - dc} AS "__gc"`,
     ]
     subqueries.push(`SELECT ${cols.join(", ")}\nFROM ${inner}`)
   }

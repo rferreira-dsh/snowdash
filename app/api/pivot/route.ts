@@ -21,6 +21,7 @@ function parseSpec(input: unknown): PivotSpec {
     values: arr(s.values),
     filters: arr(s.filters),
     totals: Boolean(s.totals),
+    subtotals: Boolean(s.subtotals),
     limit: typeof s.limit === "number" ? s.limit : DEFAULT_LIMIT,
   }
 }

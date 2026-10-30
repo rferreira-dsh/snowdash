@@ -96,6 +96,7 @@ const pt: Dict = {
   "tb.autoTitle": "Executar automaticamente a cada alteração",
   "tb.run": "Executar",
   "tb.totals": "Totais",
+  "tb.subtotals": "Subtotais",
   "tb.heat": "Calor",
   "tb.swap": "Trocar linhas e colunas",
   "tb.limitTitle": "Máximo de linhas retornadas",
@@ -126,6 +127,7 @@ const pt: Dict = {
 
   // ---- pivot table / chart
   "pt.total": "Total",
+  "pt.subtotal": "Subtotal",
   "pt.showMore": "Mostrando {a} de {b} linhas — mostrar mais",
   "chart.needValue": "Adicione ao menos um valor (medida/métrica) para gerar o gráfico.",
   "chart.noData": "Sem dados.",
@@ -391,6 +393,7 @@ const en: Dict = {
   "tb.autoTitle": "Run automatically on every change",
   "tb.run": "Run",
   "tb.totals": "Totals",
+  "tb.subtotals": "Subtotals",
   "tb.heat": "Heatmap",
   "tb.swap": "Swap rows and columns",
   "tb.limitTitle": "Maximum rows returned",
@@ -419,6 +422,7 @@ const en: Dict = {
   "status.metrics": "metrics",
 
   "pt.total": "Total",
+  "pt.subtotal": "Subtotal",
   "pt.showMore": "Showing {a} of {b} rows — show more",
   "chart.needValue": "Add at least one value (measure/metric) to draw the chart.",
   "chart.noData": "No data.",
