@@ -16,6 +16,7 @@ import {
   Loader2,
   Play,
   Rows3,
+  ListTree,
   Sigma,
   Sparkles,
   Table2,
@@ -351,7 +352,7 @@ export function Workbench() {
       const current = spec
       setLayouts((l) => ({ ...l, [sourceKey(source)]: current }))
     }
-    const sh = { ...newSheet(1), spec: saved ?? { ...EMPTY_SPEC, totals: spec.totals, limit: spec.limit } }
+    const sh = { ...newSheet(1), spec: saved ?? { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit } }
     setSheets([sh])
     setActiveId(sh.id)
     setBook(null)
@@ -564,7 +565,7 @@ export function Workbench() {
     return n
   }
   const addSheet = () => {
-    const sh = newSheet(nextSheetName(), { ...EMPTY_SPEC, totals: spec.totals, limit: spec.limit })
+    const sh = newSheet(nextSheetName(), { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit })
     setSheets((ss) => [...ss, sh])
     selectSheet(sh.id)
   }
@@ -845,6 +846,9 @@ export function Workbench() {
             <button className={toggleCls(spec.totals)} onClick={() => setSpec((s) => ({ ...s, totals: !s.totals }))}>
               <Sigma className="size-3.5" /> {t("tb.totals")}
             </button>
+            <button className={toggleCls(Boolean(spec.subtotals))} onClick={() => setSpec((s) => ({ ...s, subtotals: !s.subtotals }))}>
+              <ListTree className="size-3.5" /> {t("tb.subtotals")}
+            </button>
             <button className={toggleCls(heatmap)} onClick={() => setHeatmap((h) => !h)} disabled={view !== "table"}>
               <Flame className="size-3.5" /> {t("tb.heat")}
             </button>
@@ -902,7 +906,7 @@ export function Workbench() {
             <button
               className={toggleCls(false)}
               onClick={() => {
-                setSpec((s) => ({ ...EMPTY_SPEC, totals: s.totals, limit: s.limit }))
+                setSpec((s) => ({ ...EMPTY_SPEC, totals: s.totals, subtotals: s.subtotals, limit: s.limit }))
                 setRunSpec(null)
               }}
               title={t("tb.clear")}

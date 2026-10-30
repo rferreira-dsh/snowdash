@@ -128,6 +128,8 @@ export interface PivotSpec {
   values: ValueRef[]
   filters: FilterRef[]
   totals: boolean
+  /** Subtotals per intermediate level of rows/columns (needs 2+ dims on an axis). */
+  subtotals?: boolean
   limit: number
 }
 

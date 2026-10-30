@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { buildPivotQuery, buildValuesQuery, PivotError, quoteIdent } from "../../lib/pivot/sql"
-import { buildGrid, cellKey, keyStr } from "../../lib/pivot/transform"
+import { aggAt, buildGrid, cellKey, keyStr } from "../../lib/pivot/transform"
+import { withSubtotals } from "../../components/pivot/pivot-table"
 import { COUNT_ROWS_ID, type Field, type PivotSpec, type Source } from "../../lib/pivot/types"
 
 const table: Source = { database: "DB", schema: "S", name: "VENDAS", kind: "TABLE" }
@@ -132,6 +133,49 @@ describe("buildGrid", () => {
     expect(g.rowTotals.get(keyStr(["SP"]))).toEqual([10])
     expect(g.colTotals.get(keyStr(["APP"]))).toEqual([10])
     expect(g.grand).toEqual([15])
+  })
+
+  it("keeps subtotals by prefix depth", () => {
+    const s = spec({ rows: [{ fieldId: "UF" }, { fieldId: "CANAL" }], values: [{ fieldId: "VALOR", agg: "SUM" }], subtotals: true })
+    const g = buildGrid(
+      [
+        { r0: "SP", r1: "APP", v0: 10, __gr: 0, __gc: 0 },
+        { r0: "SP", r1: "WEB", v0: 4, __gr: 0, __gc: 0 },
+        { r0: "SP", r1: null, v0: 14, __gr: 1, __gc: 0 },
+      ],
+      s,
+    )
+    expect(g.rowKeys).toHaveLength(2)
+    expect(aggAt(g, ["SP"], [])).toEqual([14])
+    expect(withSubtotals(g.rowKeys, 2, true).map((i) => i.kind)).toEqual(["leaf", "leaf", "sub"])
+  })
+})
+
+describe("subtotal queries", () => {
+  it("adds prefix grouping sets on both axes", () => {
+    const q = buildPivotQuery(
+      table,
+      tFields,
+      spec({
+        rows: [{ fieldId: "UF" }, { fieldId: "CANAL" }],
+        columns: [{ fieldId: "DT", grain: "year" }, { fieldId: "DT", grain: "month" }],
+        values: [{ fieldId: COUNT_ROWS_ID, agg: "COUNT" }],
+        subtotals: true,
+      }),
+    )
+    expect(q.sql).toContain(`("UF")`)
+    expect(q.sql).toContain(`("UF", "CANAL", DATE_TRUNC('YEAR', "DT"))`)
+    expect(q.sql).toContain(`(GROUPING("UF") + GROUPING("CANAL")) AS "__gr"`)
+  })
+
+  it("semantic views emit one subquery per depth pair", () => {
+    const q = buildPivotQuery(
+      sv,
+      svFields,
+      spec({ rows: [{ fieldId: "T.UF" }, { fieldId: "T.CANAL" }], values: [{ fieldId: "T.TOTAL", agg: "METRIC" }], subtotals: true, totals: true }),
+    )
+    expect(q.sql.split("UNION ALL")).toHaveLength(3)
+    expect(q.sql).toContain(`1 AS "__gr"`)
   })
 })
 
