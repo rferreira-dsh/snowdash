@@ -15,13 +15,20 @@
  * Warehouse: the client may pick one per request (WAREHOUSE_HEADER). It is accepted only
  * if it appears in the caller's SHOW WAREHOUSES (and in SNOWDASH_ALLOWED_WAREHOUSES when
  * set); otherwise the request fails. No header = the service's default warehouse.
+ *
+ * Queue limit: every query carries STATEMENT_QUEUED_TIMEOUT_IN_SECONDS (SNOWDASH_QUEUE_TIMEOUT_SECS,
+ * default 60; 0 disables), so Snowflake cancels it instead of leaving it waiting on a busy
+ * warehouse. Timeouts surface as localized errors naming the warehouse.
  */
 
 import { headers } from "next/headers"
-import { querySnowflake, querySnowflakeLongRunning, type LongRunningQueryOptions } from "@/lib/snowflake"
+import { cancelQueriesByTag, querySnowflake, querySnowflakeLongRunning, setDefaultStatementParams, type LongRunningQueryOptions } from "@/lib/snowflake"
 import { AppError } from "@/lib/i18n/messages"
 
 export const WAREHOUSE_HEADER = "x-snowdash-warehouse"
+
+const QUEUE_TIMEOUT_SECS = Math.max(0, Math.floor(Number(process.env.SNOWDASH_QUEUE_TIMEOUT_SECS ?? 60)) || 0)
+if (QUEUE_TIMEOUT_SECS > 0) setDefaultStatementParams({ STATEMENT_QUEUED_TIMEOUT_IN_SECONDS: QUEUE_TIMEOUT_SECS })
 
 type Binds = NonNullable<LongRunningQueryOptions["binds"]>
 
@@ -94,19 +101,45 @@ export async function requestedWarehouse(): Promise<string | undefined> {
   return match.name
 }
 
+/** Turn warehouse queue / wait timeouts into a user-facing error naming the warehouse. */
+export async function timeoutError(e: unknown, warehouse?: string): Promise<unknown> {
+  const msg = e instanceof Error ? e.message : String(e)
+  const queued = /timeout of (\d+) second/i.exec(msg)
+  const waited = /Long-running query timed out after (\d+)ms/.exec(msg)
+  if (!queued && !waited) return e
+  const name = warehouse ?? (await defaultWarehouse().catch(() => null)) ?? "?"
+  return queued
+    ? new AppError("e.whQueued", { name, secs: Number(queued[1]) })
+    : new AppError("e.queryTimeout", { name, mins: Math.round(Number(waited![1]) / 60000) })
+}
+
 export async function userQuery(sql: string, binds?: Binds) {
   const warehouse = await requestedWarehouse()
-  return querySnowflake(sql, { callersRights: CALLERS_RIGHTS, ...(warehouse ? { warehouse } : {}), ...(binds ? { binds } : {}) })
+  try {
+    return await querySnowflake(sql, { callersRights: CALLERS_RIGHTS, ...(warehouse ? { warehouse } : {}), ...(binds ? { binds } : {}) })
+  } catch (e) {
+    throw await timeoutError(e, warehouse)
+  }
 }
 
 export async function userQueryLongRunning(sql: string, binds?: Binds, opts: Omit<LongRunningQueryOptions, "binds" | "callersRights"> = {}) {
   const warehouse = opts.warehouse ?? (await requestedWarehouse())
-  return querySnowflakeLongRunning(sql, {
-    ...opts,
-    callersRights: CALLERS_RIGHTS,
-    ...(warehouse ? { warehouse } : {}),
-    ...(binds ? { binds } : {}),
-  })
+  try {
+    return await querySnowflakeLongRunning(sql, {
+      ...opts,
+      tag: await callerKey(),
+      callersRights: CALLERS_RIGHTS,
+      ...(warehouse ? { warehouse } : {}),
+      ...(binds ? { binds } : {}),
+    })
+  } catch (e) {
+    throw await timeoutError(e, warehouse)
+  }
+}
+
+/** Cancel the calling user's in-flight long-running queries (running or queued). */
+export async function cancelCallerQueries(): Promise<number> {
+  return cancelQueriesByTag(await callerKey())
 }
 
 /** Calling user's login name (SPCS ingress header); "local" outside SPCS. Used to scope caches. */

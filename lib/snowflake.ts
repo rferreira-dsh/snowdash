@@ -46,6 +46,8 @@ export {
   closePool,
   getSnowflakeBaseUrl,
   getRestApiAuthHeader,
+  setDefaultStatementParams,
+  cancelQueriesByTag,
 } from "./sar-sdk"
 
 async function requestHeaders(): Promise<sdk.RequestHeaders> {

@@ -3,6 +3,8 @@ import { APP_TITLE, LOGO_SRC } from "@/lib/constants"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { LanguageToggle } from "@/components/language-toggle"
 import { WarehouseSelect } from "@/components/warehouse-select"
+import { CloseAppButton } from "@/components/close-app-button"
+import { AdminQueriesButton } from "@/components/admin-queries"
 
 /**
  * AppHeader — top navigation bar.
@@ -28,6 +30,8 @@ export function AppHeader() {
           <WarehouseSelect />
           <LanguageToggle />
           <ThemeToggle />
+          <AdminQueriesButton />
+          <CloseAppButton />
         </div>
       </div>
     </header>

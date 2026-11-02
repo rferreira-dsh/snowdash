@@ -41,6 +41,9 @@ let mockExecuteImpl: (opts: {
   complete: (err: Error | null, stmt: Record<string, unknown> | null, rows: Record<string, unknown>[] | null) => void
 }) => void
 
+// Status returned by the mocked getQueryStatus (long-running polling tests).
+let mockStatus: (queryId: string) => string = () => "SUCCESS"
+
 vi.mock("snowflake-sdk", () => ({
   default: {
     configure: vi.fn(),
@@ -49,6 +52,12 @@ vi.mock("snowflake-sdk", () => ({
         const conn = {
           execute: (opts: Parameters<typeof mockExecuteImpl>[0]) => mockExecuteImpl(opts),
           destroy: vi.fn((cb?: () => void) => cb?.()),
+          getQueryStatus: async (id: string) => mockStatus(id),
+          isStillRunning: (s: string) => s === "RUNNING" || s === "QUEUED",
+          isAnError: (s: string) => s === "ABORTING" || s === "FAILED_WITH_ERROR",
+          getQueryStatusThrowIfError: async (id: string) => {
+            throw new Error(`SQL execution canceled (${id})`)
+          },
         }
         return fn(conn)
       },
@@ -581,6 +590,7 @@ describe("querySnowflake caller token format", () => {
 
 describe("querySnowflake: retry on terminated connection", () => {
   let querySnowflake: typeof import("../../lib/snowflake").querySnowflake
+  let mod: typeof import("../../lib/snowflake")
 
   beforeEach(async () => {
     vi.resetModules()
@@ -607,7 +617,7 @@ describe("querySnowflake: retry on terminated connection", () => {
       }
     })
 
-    const mod = await import("@/lib/snowflake")
+    mod = await import("@/lib/snowflake")
     querySnowflake = mod.querySnowflake
   })
 
@@ -692,6 +702,52 @@ describe("querySnowflake: retry on terminated connection", () => {
 
     await querySnowflake("SELECT 1")
     expect(capturedParams).toBeUndefined()
+  })
+
+  it("merges default statement parameters (queue timeout) with the warehouse", async () => {
+    let capturedParams: Record<string, unknown> | undefined
+    mockExecuteImpl = ({ parameters, complete }) => {
+      capturedParams = parameters
+      complete(null, { getQueryId: () => "qid-q" }, [{ ok: true }])
+    }
+
+    mod.setDefaultStatementParams({ STATEMENT_QUEUED_TIMEOUT_IN_SECONDS: 60 })
+    await querySnowflake("SELECT 1", { warehouse: "MY_WH" })
+    expect(capturedParams).toEqual({ STATEMENT_QUEUED_TIMEOUT_IN_SECONDS: 60, QUERY_WAREHOUSE_NAME: "MY_WH" })
+  })
+
+  it("cancels the statement in Snowflake when a long-running query exceeds maxWaitMs", async () => {
+    const calls: { sqlText: string; binds?: unknown[] }[] = []
+    mockExecuteImpl = ({ sqlText, binds, complete }) => {
+      calls.push({ sqlText, binds })
+      complete(null, { getQueryId: () => "qid-slow" }, [])
+    }
+
+    await expect(mod.querySnowflakeLongRunning("SELECT slow", { maxWaitMs: -1 })).rejects.toThrow(/timed out/)
+    expect(calls[1]).toEqual({ sqlText: "SELECT SYSTEM$CANCEL_QUERY(?)", binds: ["qid-slow"] })
+  })
+
+  it("cancelQueriesByTag cancels only that tag's in-flight queries", async () => {
+    const cancelled = new Set<string>()
+    let n = 0
+    mockExecuteImpl = ({ sqlText, binds, complete }) => {
+      if (sqlText.includes("SYSTEM$CANCEL_QUERY")) cancelled.add(String(binds?.[0]))
+      complete(null, { getQueryId: () => `qid-${++n}` }, [])
+    }
+    mockStatus = (id) => (cancelled.has(id) ? "ABORTING" : "RUNNING")
+
+    const mine = mod.querySnowflakeLongRunning("SELECT a", { tag: "alice", pollIntervalMs: 5 })
+    const other = mod.querySnowflakeLongRunning("SELECT b", { tag: "bob", pollIntervalMs: 5 })
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(await mod.cancelQueriesByTag("alice")).toBe(1)
+    await expect(mine).rejects.toThrow(/canceled/)
+    expect([...cancelled]).toEqual(["qid-1"])
+
+    expect(await mod.cancelQueriesByTag("bob")).toBe(1)
+    await expect(other).rejects.toThrow(/canceled/)
+    expect(await mod.cancelQueriesByTag("alice")).toBe(0)
+    mockStatus = () => "SUCCESS"
   })
 
   it("passes binds through to conn.execute", async () => {
