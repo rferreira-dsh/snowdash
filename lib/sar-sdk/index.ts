@@ -114,13 +114,36 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Statement parameters applied to every query (e.g. STATEMENT_QUEUED_TIMEOUT_IN_SECONDS). */
+let defaultStatementParams: Record<string, unknown> = {}
+
+/** Set statement parameters sent with every query from this process. */
+export function setDefaultStatementParams(params: Record<string, unknown>) {
+  defaultStatementParams = { ...params }
+}
+
 /**
- * Build the `parameters` fragment for `conn.execute` when a per-query warehouse
- * override is requested. Sets the QUERY_WAREHOUSE_NAME statement parameter so the
- * query runs on the given warehouse without a separate `USE WAREHOUSE` round-trip.
+ * Build the `parameters` fragment for `conn.execute`: the default statement parameters plus,
+ * when a per-query warehouse override is requested, QUERY_WAREHOUSE_NAME so the query runs on
+ * that warehouse without a separate `USE WAREHOUSE` round-trip.
  */
 function warehouseParams(warehouse?: string): { parameters?: Record<string, unknown> } {
-  return warehouse ? { parameters: { QUERY_WAREHOUSE_NAME: warehouse } } : {}
+  const parameters = { ...defaultStatementParams, ...(warehouse ? { QUERY_WAREHOUSE_NAME: warehouse } : {}) }
+  return Object.keys(parameters).length ? { parameters } : {}
+}
+
+/** Best-effort cancel of a submitted statement (e.g. after the caller gave up waiting). */
+function cancelQuery(conn: snowflake.Connection, queryId: string): Promise<void> {
+  return new Promise((resolve) => {
+    conn.execute({
+      sqlText: "SELECT SYSTEM$CANCEL_QUERY(?)",
+      binds: [queryId],
+      complete: (err) => {
+        sfLog(err ? `cancel failed queryId=${queryId}: ${err.message}` : `cancelled queryId=${queryId}`)
+        resolve()
+      },
+    })
+  })
 }
 
 /** SDK bind values for `?` placeholders. Kept as its own type since @types may lag. */
@@ -153,6 +176,22 @@ function streamRowsToArray(statement: { streamRows: () => NodeJS.ReadableStream 
   })
 }
 
+/** Resolved long-running options; `tag` groups in-flight queries (e.g. per calling user). */
+type LongOpts = { pollIntervalMs: number; statusLogIntervalMs: number; maxWaitMs?: number; tag?: string }
+
+/** Long-running statements currently submitted and being polled, by queryId. */
+const inFlight = new Map<string, { tag?: string; conn: snowflake.Connection }>()
+
+/**
+ * Cancel every in-flight long-running query carrying `tag` (running or queued in Snowflake).
+ * Returns how many cancel requests were sent. The pollers then fail with a cancel error.
+ */
+export async function cancelQueriesByTag(tag: string): Promise<number> {
+  const targets = [...inFlight].filter(([, q]) => q.tag === tag)
+  await Promise.all(targets.map(([id, q]) => cancelQuery(q.conn, id)))
+  return targets.length
+}
+
 /**
  * Submit `asyncExec`, poll `getQueryStatus` until the warehouse finishes, then fetch rows.
  * Keeps status logs sparse (default: at most once per minute while running).
@@ -160,11 +199,7 @@ function streamRowsToArray(statement: { streamRows: () => NodeJS.ReadableStream 
 async function runLongRunningOnConnection(
   conn: PollingConnection,
   query: string,
-  options: {
-    pollIntervalMs: number
-    statusLogIntervalMs: number
-    maxWaitMs?: number
-  },
+  options: LongOpts,
   warehouse?: string,
   binds?: Binds,
 ): Promise<Record<string, any>[]> {
@@ -183,10 +218,25 @@ async function runLongRunningOnConnection(
 
   const t0 = Date.now()
   sfLog(`long-running submitted queryId=${queryId} sql=${JSON.stringify(previewSql(query))}`)
+  inFlight.set(queryId, { tag: options.tag, conn })
+  try {
+    return await pollLongRunning(conn, queryId, options, t0)
+  } finally {
+    inFlight.delete(queryId)
+  }
+}
 
+async function pollLongRunning(
+  conn: PollingConnection,
+  queryId: string,
+  options: LongOpts,
+  t0: number,
+): Promise<Record<string, any>[]> {
   let lastStatusLog = t0
   while (true) {
     if (options.maxWaitMs !== undefined && Date.now() - t0 > options.maxWaitMs) {
+      // Don't leave the statement queued/running in Snowflake after giving up on it.
+      await cancelQuery(conn, queryId)
       throw new Error(
         `Long-running query timed out after ${options.maxWaitMs}ms (queryId=${queryId})`,
       )
@@ -528,7 +578,7 @@ function queryWithPoolLongRunning(
   pool: ReturnType<typeof snowflake.createPool>,
   query: string,
   authTag: string,
-  longOpts: { pollIntervalMs: number; statusLogIntervalMs: number; maxWaitMs?: number },
+  longOpts: LongOpts,
   warehouse?: string,
   binds?: Binds,
 ): Promise<Record<string, any>[]> {
@@ -583,7 +633,7 @@ function connectAndQueryLongRunning(
   config: snowflake.ConnectionOptions,
   query: string,
   authTag: string,
-  longOpts: { pollIntervalMs: number; statusLogIntervalMs: number; maxWaitMs?: number },
+  longOpts: LongOpts,
   warehouse?: string,
   binds?: Binds,
 ): Promise<Record<string, any>[]> {
@@ -639,15 +689,18 @@ export interface LongRunningQueryOptions extends QueryOptions {
   statusLogIntervalMs?: number
   /** Fail if the query is still not finished after this many ms (optional). */
   maxWaitMs?: number
+  /** Group label for in-flight tracking; see {@link cancelQueriesByTag}. */
+  tag?: string
 }
 
 function resolveLongRunningOpts(
   o: LongRunningQueryOptions,
-): { pollIntervalMs: number; statusLogIntervalMs: number; maxWaitMs?: number } {
+): LongOpts {
   return {
     pollIntervalMs: o.pollIntervalMs ?? 5000,
     statusLogIntervalMs: o.statusLogIntervalMs ?? 60_000,
     maxWaitMs: o.maxWaitMs,
+    tag: o.tag,
   }
 }
 

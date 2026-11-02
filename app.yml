@@ -47,3 +47,9 @@ environment_variables:
   # grants there). Coverys DEV only — every user sees what EDW_ADMIN sees.
   - name: SNOWDASH_OWNER_RIGHTS_DBS
     value: "F_RFERREIRA_EDW"
+  # Logins allowed to use /api/admin/queries (list/cancel the service user's own queries).
+  - name: SNOWDASH_ADMIN_USERS
+    value: "DEV_RFERREIRA"
+  # Admin cancel only acts when the service runs as this user (Coverys DEV service user).
+  - name: SNOWDASH_SERVICE_USER
+    value: "MANAGED_SERVICE_1"
