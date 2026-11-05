@@ -1,0 +1,169 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<!-- Reduced, synthetic workbook mirroring the structure of a Tableau 2024 logical-model .twb -->
+<workbook source-build='2024.2.0' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <datasources>
+    <datasource hasconnection='false' inline='true' name='Parameters' version='18.1'>
+      <column caption='As Of Date Parameter' datatype='date' name='[Parameter 1]' role='measure' type='quantitative' value='#2026-09-30#'>
+        <calculation class='tableau' formula='#2026-09-30#' />
+      </column>
+    </datasource>
+    <datasource caption='SALES_CUBE' inline='true' name='federated.abc123' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='acme.snowflakecomputing.com' name='snowflake.x1'>
+            <connection authentication='Username Password' class='snowflake' dbname='EDW' schema='SALES' warehouse='REPORTING_WH' />
+          </named-connection>
+        </named-connections>
+        <relation type='collection'>
+          <relation connection='snowflake.x1' name='FACT_SALES' table='[EDW].[SALES].[FACT_SALES]' type='table' />
+          <relation connection='snowflake.x1' name='DIM_DATE' table='[EDW].[CALENDAR].[DIM_DATE]' type='table' />
+          <relation connection='snowflake.x1' name='DIM_PRODUCT' table='[EDW].[SALES].[DIM_PRODUCT]' type='table' />
+          <relation connection='snowflake.x1' name='ORPHAN' table='[EDW].[SALES].[ORPHAN]' type='table' />
+        </relation>
+        <cols>
+          <map key='[AMOUNT]' value='[FACT_SALES].[AMOUNT]' />
+        </cols>
+        <metadata-records>
+          <metadata-record class='column'>
+            <remote-name>SALEDATE</remote-name><local-name>[SALEDATE]</local-name><parent-name>[FACT_SALES]</parent-name><local-type>date</local-type>
+            <object-id>[FACT_SALES_OBJ]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>PRODUCTKEY</remote-name><local-name>[PRODUCTKEY]</local-name><parent-name>[FACT_SALES]</parent-name><local-type>string</local-type>
+            <object-id>[FACT_SALES_OBJ]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Order ID</remote-name><local-name>[Order ID]</local-name><parent-name>[FACT_SALES]</parent-name><local-type>string</local-type>
+            <object-id>[FACT_SALES_OBJ]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>DATE</remote-name><local-name>[DATE (DIM_DATE)]</local-name><parent-name>[DIM_DATE]</parent-name><local-type>date</local-type>
+            <object-id>[DIM_DATE_OBJ]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>PRODUCTKEY</remote-name><local-name>[PRODUCTKEY (DIM_PRODUCT)]</local-name><parent-name>[DIM_PRODUCT]</parent-name><local-type>integer</local-type>
+            <object-id>[DIM_PRODUCT_OBJ]</object-id>
+          </metadata-record>
+          <metadata-record class='column'>
+            <remote-name>Product Type</remote-name><local-name>[Product Type]</local-name><parent-name>[DIM_PRODUCT]</parent-name><local-type>string</local-type>
+            <object-id>[DIM_PRODUCT_OBJ]</object-id>
+          </metadata-record>
+        </metadata-records>
+      </connection>
+      <column caption='Amount' datatype='real' name='[AMOUNT]' role='measure' type='quantitative' />
+      <column caption='Order ID' datatype='string' name='[Order ID]' role='dimension' type='nominal' />
+      <column caption='Productkey' datatype='string' hidden='true' name='[PRODUCTKEY]' role='dimension' type='nominal' />
+      <column caption='As of Date' datatype='date' name='[DATE (DIM_DATE)]' role='dimension' type='ordinal' />
+      <column caption='Avg Ticket' datatype='real' name='[Calculation_1]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([AMOUNT]) / COUNTD([Order ID])' />
+      </column>
+      <column caption='PPL Amount' datatype='real' name='[Calculation_2]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM(IIF([Product Type] = &quot;PPL&quot;, ZN([AMOUNT]), 0))' />
+      </column>
+      <column caption='Is Month End' datatype='boolean' name='[Calculation_3]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='DATE([DATE (DIM_DATE)]) =&#10;DATE(DATETRUNC(&apos;month&apos;, [DATE (DIM_DATE)]))' />
+      </column>
+      <column caption='As of Filter' datatype='boolean' name='[Calculation_4]' role='dimension' type='nominal'>
+        <calculation class='tableau' formula='[DATE (DIM_DATE)]=[Parameters].[Parameter 1]' />
+      </column>
+      <folders-common>
+        <folder name='Measures'>
+          <folder-item name='[AMOUNT]' type='field' />
+          <folder-item name='[Calculation_1]' type='field' />
+          <folder-item name='[Calculation_3]' type='field' />
+        </folder>
+        <folder name='Product'>
+          <folder-item name='[Product Type]' type='field' />
+        </folder>
+        <folder name='Empty'>
+          <folder-item name='[Nope]' type='field' />
+        </folder>
+      </folders-common>
+      <object-graph>
+        <objects>
+          <object caption='FACT_SALES' id='FACT_SALES_OBJ'>
+            <properties context=''><relation connection='snowflake.x1' name='FACT_SALES' table='[EDW].[SALES].[FACT_SALES]' type='table' /></properties>
+          </object>
+          <object caption='DIM_DATE' id='DIM_DATE_OBJ'>
+            <properties context=''><relation connection='snowflake.x1' name='DIM_DATE' table='[EDW].[CALENDAR].[DIM_DATE]' type='table' /></properties>
+          </object>
+          <object caption='DIM_PRODUCT' id='DIM_PRODUCT_OBJ'>
+            <properties context=''><relation connection='snowflake.x1' name='DIM_PRODUCT' table='[EDW].[SALES].[DIM_PRODUCT]' type='table' /></properties>
+          </object>
+          <object caption='ORPHAN' id='ORPHAN_OBJ'>
+            <properties context=''><relation connection='snowflake.x1' name='ORPHAN' table='[EDW].[SALES].[ORPHAN]' type='table' /></properties>
+          </object>
+        </objects>
+        <relationships>
+          <relationship>
+            <expression op='='><expression op='[SALEDATE]' /><expression op='[DATE (DIM_DATE)]' /></expression>
+            <first-end-point object-id='FACT_SALES_OBJ' /><second-end-point object-id='DIM_DATE_OBJ' unique-key='true' />
+          </relationship>
+          <relationship>
+            <expression op='='><expression op='int([PRODUCTKEY])' /><expression op='[PRODUCTKEY (DIM_PRODUCT)]' /></expression>
+            <first-end-point object-id='FACT_SALES_OBJ' /><second-end-point object-id='DIM_PRODUCT_OBJ' />
+          </relationship>
+        </relationships>
+      </object-graph>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Totals by product'>
+      <table>
+        <view>
+          <datasources><datasource caption='SALES_CUBE' name='federated.abc123' /></datasources>
+          <filter class='categorical' column='[federated.abc123].[:Measure Names]'>
+            <groupfilter function='union' user:op='manual'>
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.abc123].[sum:AMOUNT:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.abc123].[ctd:Order ID:qk]&quot;' />
+              <groupfilter function='member' level='[:Measure Names]' member='&quot;[federated.abc123].[usr:Calculation_1:qk]&quot;' />
+            </groupfilter>
+          </filter>
+          <manual-sort column='[federated.abc123].[:Measure Names]' direction='ASC'>
+            <dictionary>
+              <bucket>&quot;[federated.abc123].[usr:Calculation_1:qk]&quot;</bucket>
+              <bucket>&quot;[federated.abc123].[sum:AMOUNT:qk]&quot;</bucket>
+              <bucket>&quot;[federated.abc123].[ctd:Order ID:qk]&quot;</bucket>
+            </dictionary>
+          </manual-sort>
+          <filter class='categorical' column='[federated.abc123].[none:DATE (DIM_DATE):ok]'>
+            <groupfilter function='member' level='[none:DATE (DIM_DATE):ok]' member='#2026-09-30#' />
+          </filter>
+          <filter class='categorical' column='[federated.abc123].[none:Product Type:nk]'>
+            <groupfilter function='except'>
+              <groupfilter function='level-members' level='[none:Product Type:nk]' />
+              <groupfilter function='member' level='[none:Product Type:nk]' member='&quot;XYZ&quot;' />
+            </groupfilter>
+          </filter>
+          <filter class='relative-date' column='[federated.abc123].[none:SALEDATE:qk]' period-type-v2='year' />
+          <filter class='quantitative' column='[federated.abc123].[__tableau_internal_object_id__].[cnt:FACT_SALES_OBJ:qk]' included-values='in-range'>
+            <min>2</min>
+          </filter>
+        </view>
+        <panes>
+          <pane><mark class='Automatic' /><encodings><text column='[federated.abc123].[Multiple Values]' /></encodings></pane>
+        </panes>
+        <rows total='true'>([federated.abc123].[none:Product Type:nk] / [federated.abc123].[none:Calculation_3:nk])</rows>
+        <cols>[federated.abc123].[:Measure Names]</cols>
+      </table>
+    </worksheet>
+    <worksheet name='Over time'>
+      <table>
+        <view>
+          <datasources><datasource caption='SALES_CUBE' name='federated.abc123' /></datasources>
+          <filter class='categorical' column='[federated.abc123].[tmn:DATE (DIM_DATE):ok]'>
+            <groupfilter function='union'>
+              <groupfilter function='member' level='[tmn:DATE (DIM_DATE):ok]' member='#2026-01-01 00:00:00#' />
+              <groupfilter function='member' level='[tmn:DATE (DIM_DATE):ok]' member='#2026-03-01 00:00:00#' />
+            </groupfilter>
+          </filter>
+        </view>
+        <panes>
+          <pane><mark class='Line' /><encodings><text column='[federated.abc123].[cnt:FACT_SALES_OBJ:qk]' /></encodings></pane>
+        </panes>
+        <rows>[federated.abc123].[sum:AMOUNT:qk]</rows>
+        <cols>[federated.abc123].[tmn:DATE (DIM_DATE):ok]</cols>
+      </table>
+    </worksheet>
+  </worksheets>
+</workbook>

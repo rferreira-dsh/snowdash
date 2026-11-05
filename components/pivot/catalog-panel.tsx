@@ -139,6 +139,10 @@ export function CatalogPanel(p: Props) {
   }, [objects.data, objFilter])
 
   const filed = useMemo(() => new Set(p.folders.flatMap((f) => f.fieldIds)), [p.folders])
+  const [showHidden, setShowHidden] = useState(false)
+  const hiddenSet = useMemo(() => new Set(p.source?.hidden ?? []), [p.source?.hidden])
+  const visible = (f: Field) => showHidden || !hiddenSet.has(f.id)
+  const hiddenCount = useMemo(() => (p.fields ?? []).filter((f) => hiddenSet.has(f.id)).length, [p.fields, hiddenSet])
   const matches = (f: Field) => {
     const q = fieldFilter.trim().toUpperCase()
     return !q || fieldLabel(f, f.id).toUpperCase().includes(q)
@@ -175,7 +179,7 @@ export function CatalogPanel(p: Props) {
 
   const groups = useMemo(() => {
     const q = fieldFilter.trim().toUpperCase()
-    const all = (p.fields ?? []).filter((f) => !filed.has(f.id) && (!q || f.name.toUpperCase().includes(q)))
+    const all = (p.fields ?? []).filter((f) => !filed.has(f.id) && visible(f) && (!q || f.name.toUpperCase().includes(q)))
     const isSV = p.source?.kind === "SEMANTIC_VIEW"
     if (p.source?.kind === "MODEL") {
       const groups = (p.source.model?.tables ?? []).map((t) => ({
@@ -195,7 +199,7 @@ export function CatalogPanel(p: Props) {
       { title: t("catalog.dimensions"), items: dims },
       { title: isSV ? t("catalog.metrics") : t("catalog.measures"), items: meas },
     ]
-  }, [p.fields, p.source, fieldFilter, lang, filed])
+  }, [p.fields, p.source, fieldFilter, lang, filed, showHidden, hiddenSet])
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card">
@@ -334,7 +338,7 @@ export function CatalogPanel(p: Props) {
                 </button>
               </div>
               {p.folders.map((folder) => {
-                const items = folder.fieldIds.map((id) => fileable.get(id)).filter((f): f is Field => !!f && matches(f))
+                const items = folder.fieldIds.map((id) => fileable.get(id)).filter((f): f is Field => !!f && matches(f) && visible(f))
                 if (fieldFilter.trim() && !items.length) return null
                 const open = !collapsed.has(folder.id) || !!fieldFilter.trim()
                 return (
@@ -457,6 +461,14 @@ export function CatalogPanel(p: Props) {
                 {g.items.length === 0 && <p className="px-2 text-xs text-muted-foreground">—</p>}
               </div>
             ))}
+          {p.source && !p.fieldsLoading && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowHidden((s) => !s)}
+              className="mx-2 mb-2 text-[11px] text-primary hover:underline"
+            >
+              {showHidden ? t("catalog.hideHidden") : t("catalog.showHidden", { n: hiddenCount })}
+            </button>
+          )}
         </div>
         <p className="border-t border-border px-3 py-2 text-[10px] leading-snug text-muted-foreground">
           {t("catalog.hint")}

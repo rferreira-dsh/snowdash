@@ -54,6 +54,7 @@ import { PivotChart, type ChartKind } from "./pivot-chart"
 import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
 import { prefixFolders, pruneFolders } from "@/lib/pivot/folders"
 import { CalcEditor } from "./calc-editor"
+import { TableauImport, type TableauImportResult } from "./tableau-import"
 import { theme as getTheme, themeForIndex } from "./themes"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
 import type { DragPayload, ShelfId } from "./dnd"
@@ -145,6 +146,16 @@ function prefixSpec(spec: PivotSpec, alias: string): PivotSpec {
 
 interface RunResult extends PivotResponse {
   spec: PivotSpec
+}
+
+/** Display metadata carried across model edits. */
+function extras(s: Source | null | undefined): Pick<Source, "labels" | "hidden" | "roles"> {
+  if (!s) return {}
+  return {
+    ...(s.labels ? { labels: s.labels } : {}),
+    ...(s.hidden ? { hidden: s.hidden } : {}),
+    ...(s.roles ? { roles: s.roles } : {}),
+  }
 }
 
 async function runPivot(source: Source, spec: PivotSpec): Promise<RunResult> {
@@ -270,12 +281,22 @@ export function Workbench() {
   })
   const isSV = source?.kind === "SEMANTIC_VIEW"
   const calcFields = useMemo(() => (source?.calcs ?? []).map(calcField), [source?.calcs])
+  // Display copy: friendly labels and role overrides (e.g. from a Tableau import). Raw fields keep column names.
+  const viewFields = useMemo(() => {
+    const labels = source?.labels ?? {}
+    const roles = source?.roles ?? {}
+    return fieldsQ.data?.map((f) =>
+      labels[f.id] || (roles[f.id] && f.role !== "metric")
+        ? { ...f, name: labels[f.id] ?? f.name, role: (f.role !== "metric" && roles[f.id]) || f.role }
+        : f,
+    )
+  }, [fieldsQ.data, source?.labels, source?.roles])
   const fieldMap = useMemo(() => {
-    const m = new Map<string, Field>((fieldsQ.data ?? []).map((f) => [f.id, f]))
+    const m = new Map<string, Field>((viewFields ?? []).map((f) => [f.id, f]))
     m.set(COUNT_ROWS_ID, COUNT_ROWS_FIELD)
     calcFields.forEach((f) => m.set(f.id, f))
     return m
-  }, [fieldsQ.data, calcFields])
+  }, [viewFields, calcFields])
 
   // Drop shelf items whose fields no longer exist (e.g. a table removed from the model) — in every sheet.
   useEffect(() => {
@@ -398,6 +419,7 @@ export function Workbench() {
         ...modelSource(next),
         calcs: source.calcs,
         folders: source.kind === "MODEL" ? source.folders : prefixFolders(source.folders, next.tables[0].alias),
+        ...(source.kind === "MODEL" ? extras(source) : {}),
       })
     } catch (e) {
       setNotice(e instanceof Error ? e.message : t("n.addFailed"))
@@ -405,13 +427,14 @@ export function Workbench() {
       setAdding(false)
     }
   }
-  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs, folders: source?.folders })
+  const changeModel = (m: DataModel) => setSource({ ...modelSource(m), calcs: source?.calcs, folders: source?.folders, ...extras(source) })
   const removeFromModel = (alias: string) =>
     source?.model &&
     setSource({
       ...modelSource(removeTable(source.model, alias)),
       calcs: source.calcs,
       folders: source.folders && pruneFolders(source.folders, (id) => !id.startsWith(`${alias}.`)),
+      ...extras(source),
     })
 
   // ---- calculated metrics (live on the source, so they are saved with the SnowBook) ----
@@ -455,7 +478,7 @@ export function Workbench() {
     if (!source) return setNotice(t("n.pickSource"))
     let meta = book
     if (!meta || asNew) {
-      const suggested = asNew && meta ? t("n.copySuffix", { name: meta.name }) : source.kind === "MODEL" ? t("n.modelName", { tables: source.model!.tables.map((x) => x.alias).join(" + ") }) : source.name
+      const suggested = asNew && meta ? t("n.copySuffix", { name: meta.name }) : pendingName ? pendingName : source.kind === "MODEL" ? t("n.modelName", { tables: source.model!.tables.map((x) => x.alias).join(" + ") }) : source.name
       const name = window.prompt(t("n.bookName"), suggested)?.trim()
       if (!name) return
       meta = { id: uid(), name }
@@ -472,6 +495,7 @@ export function Workbench() {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       const saved: BookMeta = { id: j.id, name: j.name, description: j.description, updatedAt: j.updatedAt, updatedBy: j.updatedBy }
       setBook(saved)
+      setPendingName(null)
       setSavedSnapshot(snapshot(saved.name, source, sheets))
       setUrlBook(saved.id)
       qc.invalidateQueries({ queryKey: ["snowbooks"] })
@@ -502,6 +526,7 @@ export function Workbench() {
       setSheets(ss)
       setActiveId(ss[0].id)
       setBook(meta)
+      setPendingName(null)
       setSavedSnapshot(snapshot(meta.name, j.source, ss))
       setRunSpec(null)
       setSort({ by: "label", dir: "asc" })
@@ -512,6 +537,32 @@ export function Workbench() {
     }
   }
 
+  // ---- Tableau import (opens as a new, unsaved book) ----------------------------
+  const [tbFile, setTbFile] = useState<{ fileName: string; xml: string } | null>(null)
+  const [pendingName, setPendingName] = useState<string | null>(null)
+  const importTableau = (r: TableauImportResult, name: string) => {
+    const hasWork = !!source && (source.kind === "MODEL" || sheets.some((sh) => specIsRunnable(sh.spec)))
+    if ((dirty || (!book && hasWork)) && !window.confirm(t("n.startOver"))) return
+    const ss: SheetState[] = r.sheets.length
+      ? r.sheets.map((s, i) => ({ ...newSheet(i + 1), ...s, spec: { ...EMPTY_SPEC, ...s.spec } }))
+      : [newSheet(1)]
+    setSource(r.source)
+    if (r.warehouse) setWarehouse(r.warehouse) // dropped by WarehouseSelect if not available
+    setDatabase(r.source.database)
+    setSchema(r.source.schema)
+    setSheets(ss)
+    setActiveId(ss[0].id)
+    setBook(null)
+    setSavedSnapshot(null)
+    setRunSpec(null)
+    setSort({ by: "label", dir: "asc" })
+    setUrlBook(null)
+    setPendingName(name)
+    setShowModel(true)
+    setTbFile(null)
+    setNotice(t("tb.imported", { name, sheets: ss.length, warnings: r.warnings.length }))
+  }
+
   const newBook = () => {
     const hasWork = !!source && (source.kind === "MODEL" || sheets.some((sh) => specIsRunnable(sh.spec)))
     if ((dirty || (!book && hasWork)) && !window.confirm(t("n.startOver"))) return
@@ -520,6 +571,7 @@ export function Workbench() {
     setActiveId(sh.id)
     setSource(null)
     setBook(null)
+    setPendingName(null)
     setSavedSnapshot(null)
     setRunSpec(null)
     setUrlBook(null)
@@ -779,7 +831,7 @@ export function Workbench() {
         onDatabase={chooseDatabase}
         onSchema={setSchema}
         onSource={chooseSource}
-        fields={fieldsQ.data}
+        fields={viewFields}
         fieldsLoading={fieldsQ.isLoading}
         fieldsError={fieldsQ.error ? fieldsQ.error.message : null}
         onQuickAdd={quickAdd}
@@ -814,7 +866,12 @@ export function Workbench() {
           onOpen={(id) => void openBook(id)}
           onNew={newBook}
           onDelete={() => void deleteCurrentBook()}
+          onImportTableau={(fileName, xml) => setTbFile({ fileName, xml })}
+          onNotice={setNotice}
         />
+        {tbFile && (
+          <TableauImport fileName={tbFile.fileName} xml={tbFile.xml} onClose={() => setTbFile(null)} onImport={importTableau} />
+        )}
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
           <div className="mr-2 flex min-w-0 items-center gap-1.5 text-sm">
@@ -999,8 +1056,8 @@ export function Workbench() {
           {source && fieldsQ.data && (
             <span className="ml-auto">
               {t("status.fields", {
-                d: fieldsQ.data.filter((f) => f.role === "dimension").length,
-                m: fieldsQ.data.filter((f) => f.role !== "dimension").length,
+                d: (viewFields ?? []).filter((f) => f.role === "dimension").length,
+                m: (viewFields ?? []).filter((f) => f.role !== "dimension").length,
                 kind: t(isSV ? "status.metrics" : "status.measures"),
               })}
             </span>
