@@ -19,6 +19,7 @@ import {
   type DimRef,
   type Field,
   type FilterRef,
+  type KeyCast,
   type PivotSpec,
   type Source,
 } from "./types"
@@ -51,6 +52,14 @@ function colRef(f: Field): string {
 }
 
 /** FROM clause; for a data model renders the join tree with validated keys. */
+/** Join-key conversion; TRY_ variants turn unconvertible values into NULL (like Tableau's INT()/DATE()). */
+function castKey(sql: string, cast: KeyCast | undefined): string {
+  if (cast === "number") return `TRY_TO_NUMBER(TO_VARCHAR(${sql}))`
+  if (cast === "date") return `TRY_TO_DATE(TO_VARCHAR(${sql}))`
+  if (cast === "string") return `TO_VARCHAR(${sql})`
+  return sql
+}
+
 export function fromClause(src: Source, fields: Field[]): string {
   if (src.kind !== "MODEL") return sourceFqn(src)
   const tables = src.model?.tables ?? []
@@ -70,7 +79,7 @@ export function fromClause(src: Source, fields: Field[]): string {
       const on = j.pairs.map((p) => {
         const l = lookup(map, `${j.toAlias}.${p.left}`)
         const r = lookup(map, `${t.alias}.${p.right}`)
-        return `${colRef(l)} = ${colRef(r)}`
+        return `${castKey(colRef(l), p.leftCast)} = ${castKey(colRef(r), p.rightCast)}`
       })
       parts.push(`${j.type} JOIN ${fqn} ON ${on.join(" AND ")}`)
     }

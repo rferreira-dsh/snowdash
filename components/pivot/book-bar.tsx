@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { BookOpen, ChevronDown, Copy, FilePlus2, Info, Link2, Loader2, Save, Search, Sparkles, Table2, Trash2 } from "lucide-react"
+import { BookOpen, ChevronDown, Copy, FilePlus2, FileUp, Info, Link2, Loader2, Save, Search, Sparkles, Table2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { currentLocale, t } from "@/lib/i18n/client"
 import type { BookMeta } from "./workbench"
@@ -30,6 +30,9 @@ interface Props {
   onOpen: (id: string) => void
   onNew: () => void
   onDelete: () => void
+  /** A Tableau workbook file was picked (content as text). */
+  onImportTableau: (fileName: string, xml: string) => void
+  onNotice: (msg: string) => void
 }
 
 export function BookBar(p: Props) {
@@ -38,6 +41,18 @@ export function BookBar(p: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [infoOpen, setInfoOpen] = useState(false)
   const infoRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ""
+    if (!f) return
+    if (/\.twbx$/i.test(f.name)) return p.onNotice(t("tb.twbx"))
+    if (f.size > 10_000_000) return p.onNotice(t("tb.tooLarge", { mb: 10 }))
+    const reader = new FileReader()
+    reader.onload = () => p.onImportTableau(f.name, String(reader.result ?? ""))
+    reader.onerror = () => p.onNotice(t("tb.readFailed"))
+    reader.readAsText(f)
+  }
 
   useEffect(() => {
     if (!infoOpen) return
@@ -165,6 +180,10 @@ export function BookBar(p: Props) {
             </div>
           )}
         </div>
+        <button className={btn} onClick={() => fileRef.current?.click()} title={t("tb.buttonTitle")}>
+          <FileUp className="size-3.5" /> {t("tb.button")}
+        </button>
+        <input ref={fileRef} type="file" accept=".twb,.twbx" className="hidden" onChange={pickFile} />
         <button className={btn} onClick={p.onNew} title={t("book.newTitle")}>
           <FilePlus2 className="size-3.5" /> {t("book.new")}
         </button>

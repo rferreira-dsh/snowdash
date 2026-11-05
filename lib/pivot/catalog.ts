@@ -6,7 +6,10 @@ import { AppError } from "../i18n/messages"
 import { parseFolders } from "./folders"
 import {
   CURRENCIES,
+  KEY_CASTS,
+  type KeyCast,
   MAX_CALCS,
+  MAX_LABELS,
   MAX_MODEL_TABLES,
   type CalcFormat,
   type CalcMetric,
@@ -192,7 +195,12 @@ function parseModel(input: unknown): DataModel {
         pairs: pairs
           .map((p) => p as Record<string, unknown>)
           .filter((p) => ok(p.left) && ok(p.right))
-          .map((p) => ({ left: p.left as string, right: p.right as string })),
+          .map((p) => {
+            const cast = (v: unknown) => (KEY_CASTS as unknown[]).includes(v) ? (v as KeyCast) : undefined
+            const lc = cast(p.leftCast)
+            const rc = cast(p.rightCast)
+            return { left: p.left as string, right: p.right as string, ...(lc ? { leftCast: lc } : {}), ...(rc ? { rightCast: rc } : {}) }
+          }),
       }
     }
     aliases.add(alias)
@@ -214,7 +222,28 @@ export function parseSource(input: unknown): Source {
   if (kind === "MODEL") src.model = parseModel(s.model)
   if (s.calcs !== undefined) src.calcs = parseCalcs(s.calcs)
   if (s.folders !== undefined) src.folders = parseFolders(s.folders)
+  if (s.labels !== undefined) src.labels = parseStringMap(s.labels, (v) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : null))
+  if (s.roles !== undefined) {
+    src.roles = parseStringMap(s.roles, (v) => (v === "dimension" || v === "measure" ? v : null)) as Source["roles"]
+  }
+  if (s.hidden !== undefined) {
+    if (!Array.isArray(s.hidden) || s.hidden.length > MAX_LABELS) throw new AppError("e.badParam", { name: "hidden" })
+    src.hidden = [...new Set(s.hidden.filter((h): h is string => typeof h === "string" && h.length > 0 && h.length <= 300))]
+  }
   return src
+}
+
+/** Validate a { fieldId: value } map; invalid entries are dropped. */
+function parseStringMap(input: unknown, value: (v: unknown) => string | null): Record<string, string> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new AppError("e.badParam", { name: "labels" })
+  const entries = Object.entries(input as Record<string, unknown>)
+  if (entries.length > MAX_LABELS) throw new AppError("e.badParam", { name: "labels" })
+  const out: Record<string, string> = {}
+  for (const [k, v] of entries) {
+    const val = value(v)
+    if (k.length > 0 && k.length <= 300 && val !== null) out[k] = val
+  }
+  return out
 }
 
 const CALC_ID_RE = /^[A-Za-z0-9_-]{1,40}$/

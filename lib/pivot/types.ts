@@ -3,6 +3,9 @@
 export type SourceKind = "TABLE" | "VIEW" | "SEMANTIC_VIEW" | "MODEL"
 
 export type JoinType = "LEFT" | "INNER"
+/** Conversion applied to a join key (e.g. Tableau int([X])); invalid values become NULL. */
+export type KeyCast = "number" | "string" | "date"
+export const KEY_CASTS: KeyCast[] = ["number", "string", "date"]
 
 export interface ModelTable {
   database: string
@@ -15,7 +18,7 @@ export interface ModelTable {
     toAlias: string
     type: JoinType
     /** left = column of `toAlias`, right = column of this table. */
-    pairs: { left: string; right: string }[]
+    pairs: { left: string; right: string; leftCast?: KeyCast; rightCast?: KeyCast }[]
   }
 }
 
@@ -34,7 +37,15 @@ export interface Source {
   calcs?: CalcMetric[]
   /** User-defined field folders for the catalog panel (saved with the SnowBook). */
   folders?: FieldFolder[]
+  /** Display names by field id (e.g. Tableau captions). */
+  labels?: Record<string, string>
+  /** Field ids hidden from the catalog panel (still queryable). */
+  hidden?: string[]
+  /** Role overrides by field id (e.g. Tableau dimension/measure). */
+  roles?: Record<string, "dimension" | "measure">
 }
+
+export const MAX_LABELS = 2000
 
 export interface FieldFolder {
   id: string
@@ -63,7 +74,7 @@ export const CALC_PREFIX = "calc:"
 export const MAX_CALCS = 50
 export const CURRENCIES = ["BRL", "USD", "EUR"] as const
 
-export const MAX_MODEL_TABLES = 8
+export const MAX_MODEL_TABLES = 16
 
 export type FieldRole = "dimension" | "measure" | "metric"
 export type FieldFamily = "number" | "date" | "text" | "boolean" | "other"
