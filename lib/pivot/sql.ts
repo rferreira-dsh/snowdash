@@ -186,8 +186,8 @@ function validateSpec(spec: PivotSpec) {
   if (spec.rows.length + spec.columns.length + spec.values.length === 0) {
     throw new PivotError("e.needField")
   }
-  const lim = spec.limits ?? configuredLimits().default
-  if (spec.rows.length > lim.rows || spec.columns.length > lim.columns || spec.values.length > lim.values) {
+  const lim = spec.limits === undefined ? configuredLimits().default : spec.limits
+  if (lim && (spec.rows.length > lim.rows || spec.columns.length > lim.columns || spec.values.length > lim.values)) {
     throw new PivotError("e.tooMany", { rows: lim.rows, columns: lim.columns, values: lim.values })
   }
 }

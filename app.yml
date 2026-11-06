@@ -53,8 +53,7 @@ environment_variables:
   # Admin cancel only acts when the service runs as this user (Coverys DEV service user).
   - name: SNOWDASH_SERVICE_USER
     value: "MANAGED_SERVICE_1"
-  # Pivot shelf limits "rows,columns,values": default for everyone; ceiling for SNOWDASH_ADMIN_USERS.
+  # Pivot shelf limits "rows,columns,values" for everyone. Admins (SNOWDASH_ADMIN_USERS) have no
+  # limit unless SNOWDASH_LIMITS_MAX is set to a ceiling.
   - name: SNOWDASH_LIMITS_DEFAULT
     value: "8,4,12"
-  - name: SNOWDASH_LIMITS_MAX
-    value: "16,8,30"

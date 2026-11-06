@@ -48,7 +48,24 @@ export function LimitsButton({
   }, [open])
 
   if (!info) return null
-  const cap = info.admin ? info.max : info.default
+  if (info.admin && !info.max) {
+    return (
+      <div className="relative" ref={ref}>
+        <button className={className} onClick={() => setOpen((o) => !o)} title={t("lim.title")}>
+          <SlidersHorizontal className="size-3.5" /> {t("lim.button")} <span>∞</span>
+        </button>
+        {open && (
+          <div className="absolute right-0 top-8 z-50 w-72 rounded-md border border-border bg-popover p-3 text-xs shadow-lg">
+            <div className="mb-2 font-medium">{t("lim.title")}</div>
+            <div>{t("lim.unlimited")}</div>
+            <div className="mt-2 text-muted-foreground">{t("lim.default", { ...info.default })}</div>
+            <div className="text-muted-foreground">{t("lim.heavy")}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
+  const cap = info.admin && info.max ? info.max : info.default
   const eff: FieldLimits = { ...info.default }
   for (const k of KEYS) if (value?.[k]) eff[k] = Math.min(value[k], cap[k])
   const custom = KEYS.some((k) => eff[k] !== info.default[k])
@@ -95,7 +112,7 @@ export function LimitsButton({
           </div>
           <div className="mt-3 space-y-0.5 text-muted-foreground">
             <div>{t("lim.default", { ...info.default })}</div>
-            <div>{t("lim.max", { ...info.max })}</div>
+            {info.max && <div>{t("lim.max", { ...info.max })}</div>}
             {!info.admin && <div>{t("lim.adminOnly")}</div>}
             <div>{t("lim.heavy")}</div>
           </div>

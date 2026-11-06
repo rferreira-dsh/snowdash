@@ -143,7 +143,7 @@ export interface PivotSpec {
   subtotals?: boolean
   limit: number
   /** Max fields per shelf for this sheet (server clamps; see lib/pivot/limits.ts). */
-  limits?: FieldLimits
+  limits?: FieldLimits | null
 }
 
 export interface FieldLimits {
@@ -155,7 +155,7 @@ export interface FieldLimits {
 /** GET /api/limits */
 export interface LimitsInfo {
   default: FieldLimits
-  max: FieldLimits
+  max: FieldLimits | null
   admin: boolean
 }
 
