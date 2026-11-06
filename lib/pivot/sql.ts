@@ -25,6 +25,7 @@ import {
 } from "./types"
 import { AppError } from "../i18n/messages"
 import { formulaFields, parseFormula, renderMetricsFormula, renderTableFormula } from "./formula"
+import { configuredLimits } from "./limits"
 
 export type Bind = string | number
 
@@ -185,8 +186,9 @@ function validateSpec(spec: PivotSpec) {
   if (spec.rows.length + spec.columns.length + spec.values.length === 0) {
     throw new PivotError("e.needField")
   }
-  if (spec.rows.length > 8 || spec.columns.length > 4 || spec.values.length > 12) {
-    throw new PivotError("e.tooMany")
+  const lim = spec.limits ?? configuredLimits().default
+  if (spec.rows.length > lim.rows || spec.columns.length > lim.columns || spec.values.length > lim.values) {
+    throw new PivotError("e.tooMany", { rows: lim.rows, columns: lim.columns, values: lim.values })
   }
 }
 

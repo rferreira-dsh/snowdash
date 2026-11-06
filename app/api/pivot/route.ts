@@ -7,6 +7,8 @@ import { defaultWarehouse, requestedWarehouse, userQueryLongRunning } from "@/li
 import { getCachedFields } from "@/lib/pivot/cache"
 import { parseSource } from "@/lib/pivot/catalog"
 import { buildPivotQuery } from "@/lib/pivot/sql"
+import { isAdmin } from "@/lib/pivot/admin"
+import { resolveLimits } from "@/lib/pivot/limits"
 import { errorResponse } from "@/lib/api"
 import { DEFAULT_LIMIT, type PivotResponse, type PivotSpec } from "@/lib/pivot/types"
 
@@ -23,6 +25,7 @@ function parseSpec(input: unknown): PivotSpec {
     totals: Boolean(s.totals),
     subtotals: Boolean(s.subtotals),
     limit: typeof s.limit === "number" ? s.limit : DEFAULT_LIMIT,
+    limits: s.limits,
   }
 }
 
@@ -38,6 +41,7 @@ export async function POST(req: Request) {
     const body = await req.json()
     const source = parseSource(body.source)
     const spec = parseSpec(body.spec)
+    spec.limits = resolveLimits(spec.limits, await isAdmin())
     const fields = await getCachedFields(source)
     const built = buildPivotQuery(source, fields, spec)
     sql = built.sql

@@ -38,7 +38,7 @@ run:
 
 profile:
   label: "SnowDash"
-  description: "Análise ad-hoc estilo pivot (arrastar e soltar) sobre tabelas, views, modelos com joins e semantic views, com SnowBooks salvos."
+  description: "Tableau-style drag-and-drop pivot analysis over tables, views, joined models and semantic views, with saved SnowBooks."
   icon: public/icon.png
 # SNOWDASH_BOOKS_TABLE defaults to <service db>.<service schema>.SNOWBOOKS.
 
@@ -53,3 +53,8 @@ environment_variables:
   # Admin cancel only acts when the service runs as this user (Coverys DEV service user).
   - name: SNOWDASH_SERVICE_USER
     value: "MANAGED_SERVICE_1"
+  # Pivot shelf limits "rows,columns,values": default for everyone; ceiling for SNOWDASH_ADMIN_USERS.
+  - name: SNOWDASH_LIMITS_DEFAULT
+    value: "8,4,12"
+  - name: SNOWDASH_LIMITS_MAX
+    value: "16,8,30"
