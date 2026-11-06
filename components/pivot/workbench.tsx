@@ -54,6 +54,7 @@ import { PivotChart, type ChartKind } from "./pivot-chart"
 import { aggLabel, calcField, COUNT_ROWS_FIELD, fieldLabel, grainLabel, valueLabel } from "./labels"
 import { prefixFolders, pruneFolders } from "@/lib/pivot/folders"
 import { CalcEditor } from "./calc-editor"
+import { LimitsButton } from "./limits-button"
 import { TableauImport, type TableauImportResult } from "./tableau-import"
 import { theme as getTheme, themeForIndex } from "./themes"
 import { currentLocale, t, useLang } from "@/lib/i18n/client"
@@ -373,7 +374,7 @@ export function Workbench() {
       const current = spec
       setLayouts((l) => ({ ...l, [sourceKey(source)]: current }))
     }
-    const sh = { ...newSheet(1), spec: saved ?? { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit } }
+    const sh = { ...newSheet(1), spec: saved ?? { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit, limits: spec.limits } }
     setSheets([sh])
     setActiveId(sh.id)
     setBook(null)
@@ -617,7 +618,7 @@ export function Workbench() {
     return n
   }
   const addSheet = () => {
-    const sh = newSheet(nextSheetName(), { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit })
+    const sh = newSheet(nextSheetName(), { ...EMPTY_SPEC, totals: spec.totals, subtotals: spec.subtotals, limit: spec.limit, limits: spec.limits })
     setSheets((ss) => [...ss, sh])
     selectSheet(sh.id)
   }
@@ -906,6 +907,12 @@ export function Workbench() {
             <button className={toggleCls(Boolean(spec.subtotals))} onClick={() => setSpec((s) => ({ ...s, subtotals: !s.subtotals }))}>
               <ListTree className="size-3.5" /> {t("tb.subtotals")}
             </button>
+            <LimitsButton
+              className={toggleCls(Boolean(spec.limits))}
+              value={spec.limits}
+              used={{ rows: spec.rows.length, columns: spec.columns.length, values: spec.values.length }}
+              onChange={(limits) => setSpec((s) => ({ ...s, limits }))}
+            />
             <button className={toggleCls(heatmap)} onClick={() => setHeatmap((h) => !h)} disabled={view !== "table"}>
               <Flame className="size-3.5" /> {t("tb.heat")}
             </button>
@@ -963,7 +970,7 @@ export function Workbench() {
             <button
               className={toggleCls(false)}
               onClick={() => {
-                setSpec((s) => ({ ...EMPTY_SPEC, totals: s.totals, subtotals: s.subtotals, limit: s.limit }))
+                setSpec((s) => ({ ...EMPTY_SPEC, totals: s.totals, subtotals: s.subtotals, limit: s.limit, limits: s.limits }))
                 setRunSpec(null)
               }}
               title={t("tb.clear")}

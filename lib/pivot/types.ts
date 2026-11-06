@@ -142,6 +142,21 @@ export interface PivotSpec {
   /** Subtotals per intermediate level of rows/columns (needs 2+ dims on an axis). */
   subtotals?: boolean
   limit: number
+  /** Max fields per shelf for this sheet (server clamps; see lib/pivot/limits.ts). */
+  limits?: FieldLimits
+}
+
+export interface FieldLimits {
+  rows: number
+  columns: number
+  values: number
+}
+
+/** GET /api/limits */
+export interface LimitsInfo {
+  default: FieldLimits
+  max: FieldLimits
+  admin: boolean
 }
 
 export interface PivotRequest {
